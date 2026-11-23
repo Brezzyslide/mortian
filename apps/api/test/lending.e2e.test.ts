@@ -87,6 +87,14 @@ describe('motorcycle ride-to-own over HTTP', () => {
     expect(accountNumber).toMatch(/^99\d{8}$/);
   });
 
+  it('the underwriting queue lists the new application; managers see product switches', async () => {
+    const q = await http.get('/v1/admin/lending/accounts?status=applied').set(bearer('uw')).expect(200);
+    expect(q.body.accounts.map((a: { reference: string }) => a.reference)).toContain(reference);
+    await http.get('/v1/admin/lending/accounts?status=bogus').set(bearer('uw')).expect(400);
+    const p = await http.get('/v1/admin/lending/products').set(bearer('mgr')).expect(200);
+    expect(p.body.products.find((x: { productCode: string }) => x.productCode === 'motorcycle_ride_to_own').live).toBe(true);
+  });
+
   it('only underwriters approve; approval within bounds is immediate', async () => {
     const body = { tier: 'B', assetPriceKobo: '150000000' };
     await http.post(`/v1/admin/lending/accounts/${reference}/approve`).set(bearer('fin')).send(body).expect(403);

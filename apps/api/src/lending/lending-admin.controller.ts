@@ -9,6 +9,7 @@ import {
   NotFoundException,
   Param,
   Post,
+  Query,
 } from '@nestjs/common';
 import { z } from 'zod';
 import pg from 'pg';
@@ -79,6 +80,15 @@ export class LendingAdminController {
 
   // ----- products and tiers -----
 
+  @StaffRoles('manager')
+  @Get('products')
+  async products() {
+    const { rows } = await this.pool.query(
+      `SELECT product_code AS "productCode", live, updated_at AS "updatedAt" FROM product_setting ORDER BY product_code`,
+    );
+    return { products: rows };
+  }
+
   @StaffRoles('super_admin')
   @Post('products/:product/live')
   @HttpCode(200)
@@ -135,10 +145,37 @@ export class LendingAdminController {
 
   // ----- accounts -----
 
+  /** Account lists for the console, e.g. the underwriting queue (?status=applied). Newest first. */
+  @StaffRoles('underwriter', 'collections', 'finance', 'manager')
+  @Get('accounts')
+  async accounts(@Query('status') status?: string, @Query('limit') limitRaw?: string) {
+    const statuses = [
+      'applied', 'approved', 'contracted', 'deposit_paid', 'active', 'in_arrears', 'repossession_review',
+      'repossessed', 'closed_recovered', 'settled', 'title_transferred', 'declined', 'withdrawn', 'written_off',
+    ];
+    if (status && !statuses.includes(status)) throw new BadRequestException('unknown status');
+    const limit = Math.min(Math.max(Number(limitRaw) || 50, 1), 200);
+    const { rows } = await this.pool.query(
+      `SELECT f.reference, f.product_code AS "productCode", f.status, f.created_at AS "createdAt",
+              p.phone, p.full_name AS "fullName"
+         FROM finance_account f JOIN person p ON p.id = f.person_id
+        WHERE ($1::text IS NULL OR f.status = $1)
+        ORDER BY f.created_at DESC LIMIT $2`,
+      [status ?? null, limit],
+    );
+    return { accounts: rows };
+  }
+
   @StaffRoles('underwriter', 'collections', 'finance', 'manager')
   @Get('accounts/:reference')
   async account(@Param('reference') reference: string) {
-    return this.lending.statement(await this.accountId(reference)).catch(http);
+    const id = await this.accountId(reference);
+    const { rows } = await this.pool.query<{ product_code: string; phone: string | null; full_name: string | null }>(
+      `SELECT f.product_code, p.phone, p.full_name FROM finance_account f JOIN person p ON p.id = f.person_id WHERE f.id = $1`,
+      [id],
+    );
+    const statement = await this.lending.statement(id).catch(http);
+    return { ...statement, productCode: rows[0]!.product_code, customer: { phone: rows[0]!.phone, fullName: rows[0]!.full_name } };
   }
 
   /**
@@ -182,6 +219,18 @@ export class LendingAdminController {
   async activate(@Param('reference') reference: string, @Body() body: unknown, @Auth() auth: AccessClaims) {
     const { startDate } = parseBody(ActivateBody, body);
     return this.lending.activate(await this.accountId(reference), auth.sub, startDate).catch(http);
+  }
+
+  @StaffRoles('underwriter', 'collections', 'finance', 'manager')
+  @Get('accounts/:reference/fees')
+  async fees(@Param('reference') reference: string) {
+    const { rows } = await this.pool.query(
+      `SELECT f.id, f.code, f.amount::text AS amount, f.status, f.charged_at AS "chargedAt", f.waiver_reason AS "waiverReason",
+              coalesce((SELECT sum(amount) FROM allocation a WHERE a.fee_charge_id = f.id), 0)::text AS paid
+         FROM fee_charge f WHERE f.finance_account_id = $1 ORDER BY f.charged_at DESC`,
+      [await this.accountId(reference)],
+    );
+    return { fees: rows };
   }
 
   @StaffRoles('finance', 'manager')

@@ -11,7 +11,7 @@ apps/
   api/        NestJS API (modular monolith) + worker entrypoint
   rider/      Expo rider app (Android first) — Phase 2
   web/        customer + merchant PWA (React + Vite)
-  console/    admin console (React + Vite)
+  console/    staff console (React + Vite), served at /console/
   sign/       signer / guarantor web flow (React + Vite)
 packages/
   domain/     money (kobo), brand config, shared types and state machines

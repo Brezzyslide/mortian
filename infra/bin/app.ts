@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { App } from 'aws-cdk-lib';
 import { AppStack } from '../lib/app-stack.js';
 import { CiStack } from '../lib/ci-stack.js';
@@ -9,6 +11,7 @@ import { STAGES } from '../lib/stage.js';
 import { WafStack } from '../lib/waf-stack.js';
 
 const app = new App();
+const consoleDistPath = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', 'apps', 'console', 'dist');
 
 const slug: string = app.node.tryGetContext('projectSlug');
 const githubRepo: string = app.node.tryGetContext('githubRepo');
@@ -55,6 +58,7 @@ for (const settings of stages) {
     crossRegionReferences: true,
     alb: api.alb,
     webAclArn: waf.webAclArn,
+    consoleDistPath,
     ...(domain ? { domain } : {}),
   });
 }

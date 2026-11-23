@@ -1,15 +1,20 @@
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { App } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { AppStack } from '../lib/app-stack.js';
 import { CoreStack } from '../lib/core-stack.js';
 import { DataStack } from '../lib/data-stack.js';
-import { EdgeStack } from '../lib/edge-stack.js';
+import { EdgeStack, SPA_REWRITE } from '../lib/edge-stack.js';
 import { NetworkStack } from '../lib/network-stack.js';
 import { STAGES, type StageSettings } from '../lib/stage.js';
 import { WafStack } from '../lib/waf-stack.js';
 
 const env = { account: '111111111111', region: 'af-south-1' };
+const consoleDist = mkdtempSync(join(tmpdir(), 'console-'));
+writeFileSync(join(consoleDist, 'index.html'), '<!doctype html>');
 
 function build(settings: StageSettings, domain?: { name: string; certificateArn: string }) {
   const app = new App();
@@ -32,6 +37,7 @@ function build(settings: StageSettings, domain?: { name: string; certificateArn:
     crossRegionReferences: true,
     alb: api.alb,
     webAclArn: waf.webAclArn,
+    consoleDistPath: consoleDist,
     ...(domain ? { domain } : {}),
   });
   return {
@@ -155,6 +161,25 @@ describe('edge', () => {
     });
   });
 
+  it('serves the console from a private bucket under /console with a strict CSP', () => {
+    staging.edge.hasResourceProperties('AWS::S3::Bucket', {
+      PublicAccessBlockConfiguration: Match.objectLike({ BlockPublicAcls: true, RestrictPublicBuckets: true }),
+    });
+    staging.edge.resourceCountIs('AWS::CloudFront::OriginAccessControl', 1);
+    staging.edge.hasResourceProperties('AWS::CloudFront::Distribution', {
+      DistributionConfig: Match.objectLike({
+        CacheBehaviors: Match.arrayWith([Match.objectLike({ PathPattern: '/console*', ViewerProtocolPolicy: 'redirect-to-https' })]),
+      }),
+    });
+    staging.edge.hasResourceProperties('AWS::CloudFront::ResponseHeadersPolicy', {
+      ResponseHeadersPolicyConfig: Match.objectLike({
+        SecurityHeadersConfig: Match.objectLike({
+          ContentSecurityPolicy: Match.objectLike({ ContentSecurityPolicy: Match.stringLikeRegexp("frame-ancestors 'none'") }),
+        }),
+      }),
+    });
+  });
+
   it('production uses its own domain with TLS 1.2+', () => {
     prod.edge.hasResourceProperties('AWS::CloudFront::Distribution', {
       DistributionConfig: Match.objectLike({
@@ -162,5 +187,28 @@ describe('edge', () => {
         ViewerCertificate: Match.objectLike({ MinimumProtocolVersion: 'TLSv1.2_2021' }),
       }),
     });
+  });
+});
+
+describe('console SPA rewrite function', () => {
+  // eslint-disable-next-line @typescript-eslint/no-implied-eval
+  const handler = new Function(`${SPA_REWRITE}; return handler;`)() as (e: { request: { uri: string } }) => {
+    uri?: string;
+    statusCode?: number;
+  };
+  const run = (uri: string) => handler({ request: { uri } });
+
+  it.each([
+    ['/console/', '/console/index.html'],
+    ['/console/accounts/FA-000123', '/console/index.html'],
+    ['/console/approvals', '/console/index.html'],
+    ['/console/assets/index-abc.js', '/console/assets/index-abc.js'],
+    ['/console/assets/index-abc.css', '/console/assets/index-abc.css'],
+  ])('%s -> %s', (uri, expected) => {
+    expect(run(uri).uri).toBe(expected);
+  });
+
+  it('redirects /console to /console/', () => {
+    expect(run('/console').statusCode).toBe(301);
   });
 });
