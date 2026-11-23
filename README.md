@@ -17,6 +17,7 @@ packages/
   domain/     money (kobo), brand config, shared types and state machines
   db/         SQL migrations, migration runner, test database helper
   ledger/     double-entry posting rules, posting service and allocation engine
+  identity/   phone OTP, staff password + TOTP, sessions, audit log
   adapters/   provider ports + sandbox implementations
 infra/        AWS CDK stacks
 docs/         PRD pointer, ADRs, integration matrix

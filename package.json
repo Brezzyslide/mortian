@@ -13,7 +13,10 @@
     "synth": "pnpm --filter @project/infra synth"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
+    "onlyBuiltDependencies": [
+      "@swc/core",
+      "esbuild"
+    ]
   },
   "devDependencies": {
     "turbo": "^2.5.0",

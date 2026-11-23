@@ -10,7 +10,7 @@ Status values: **live** (real provider, production credentials), **sandbox-real*
 | Collections | Paystack, Monnify, Flutterwave | — | interface |
 | Payouts | Paystack, Monnify, Flutterwave | — | not started (Phase 1) |
 | ConditionalSettlement | authorised bank/payment partner | — | blocked: no partner |
-| Messaging | Termii, Africa's Talking, WhatsApp Business, Firebase | — | interface |
+| Messaging | Termii, Africa's Talking, WhatsApp Business, Firebase | `SandboxMessaging` (in-memory outbox; refused in production config) | simulated |
 | Maps | Google Maps, Mapbox | — | not started (Phase 2) |
 | Telematics | Traccar, Wialon | — | not started (Phase 2) |
 | ExternalSigning | DocuSign and similar | — | optional |
