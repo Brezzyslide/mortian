@@ -67,6 +67,7 @@ beforeAll(async () => {
   const r1 = await http.post('/v1/auth/otp/request').send({ phone: '08091112222' });
   const code = messaging.lastTo('+2348091112222')!.vars['code'];
   tokens['rider'] = (await http.post('/v1/auth/otp/verify').send({ challengeId: r1.body.challengeId, code })).body.accessToken;
+  await http.post('/v1/me/profile').set({ Authorization: `Bearer ${tokens['rider']}` }).send({ fullName: 'Bola Rider' }).expect(200);
 });
 afterAll(async () => {
   await app?.close();

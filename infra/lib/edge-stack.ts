@@ -17,15 +17,19 @@ export interface EdgeStackProps extends StackProps {
    * Single-page apps served from the web bucket under /<prefix>/: the staff console and the
    * signing page. A missing dist folder creates the route but uploads nothing.
    */
-  readonly webApps?: readonly { readonly prefix: 'console' | 'sign'; readonly distPath: string }[];
+  readonly webApps?: readonly { readonly prefix: WebPrefix; readonly distPath: string }[];
 }
 
 /** CloudFront Function (viewer request): client-side routes get the app shell; files pass through. */
+/** Path prefixes served as single-page apps from the web bucket. */
+export const WEB_PREFIXES = ['app', 'console', 'sign'] as const;
+export type WebPrefix = (typeof WEB_PREFIXES)[number];
+
 export const SPA_REWRITE = `
 function handler(event) {
   var r = event.request;
   var app = r.uri.split('/')[1];
-  if (app !== 'console' && app !== 'sign') return r;
+  if (app !== 'app' && app !== 'console' && app !== 'sign') return r;
   if (r.uri === '/' + app) {
     return { statusCode: 301, statusDescription: 'Moved', headers: { location: { value: '/' + app + '/' } } };
   }
@@ -113,8 +117,8 @@ export class EdgeStack extends Stack {
         : {}),
       defaultBehavior: apiBehavior,
       additionalBehaviors: Object.fromEntries(
-        ['/console*', '/sign*'].map((path) => [
-          path,
+        WEB_PREFIXES.map((prefix) => [
+          `/${prefix}*`,
           {
             origin: webOrigin,
             viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
@@ -131,7 +135,7 @@ export class EdgeStack extends Stack {
         Annotations.of(this).addWarning(`${web.prefix} not built (${web.distPath} missing): run \`pnpm build\` before deploying.`);
         continue;
       }
-      const id = web.prefix === 'console' ? 'Console' : 'Sign';
+      const id = { app: 'App', console: 'Console', sign: 'Sign' }[web.prefix];
       // Hashed assets cache for a year; index.html is always revalidated so a deploy shows at once.
       new deploy.BucketDeployment(this, `${id}Assets`, {
         sources: [deploy.Source.asset(web.distPath, { exclude: ['index.html'] })],
@@ -155,6 +159,7 @@ export class EdgeStack extends Stack {
     new CfnOutput(this, 'ApiUrl', { value: base });
     new CfnOutput(this, 'ConsoleUrl', { value: `${base}/console/` });
     new CfnOutput(this, 'SigningUrl', { value: `${base}/sign/` });
+    new CfnOutput(this, 'CustomerAppUrl', { value: `${base}/app/` });
     new CfnOutput(this, 'CloudFrontDomain', { value: this.distribution.distributionDomainName });
   }
 }

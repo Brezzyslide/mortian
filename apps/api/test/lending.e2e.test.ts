@@ -81,6 +81,35 @@ describe('motorcycle ride-to-own over HTTP', () => {
     await http.post('/v1/admin/lending/products/motorcycle_ride_to_own/live').set(bearer('root')).send({ live: true }).expect(200);
   });
 
+  it('lists only live products to customers', async () => {
+    const r = await http.get('/v1/me/products').set(bearer('rider')).expect(200);
+    expect(r.body.products).toEqual([expect.objectContaining({ productCode: 'motorcycle_ride_to_own', name: 'Motorcycle ride-to-own' })]);
+    await http.get('/v1/me/products').set(bearer('uw')).expect(403);
+  });
+
+  it('needs a full name before applying, and rejects nonsense names', async () => {
+    const r = await http.post('/v1/me/applications').set(bearer('rider')).send({ productCode: 'motorcycle_ride_to_own' }).expect(409);
+    expect(r.body.error).toBe('profile_incomplete');
+    for (const fullName of ['Bola', '<script>x</script> y', '12 34', 'x'.repeat(130) + ' y'])
+      await http.post('/v1/me/profile').set(bearer('rider')).send({ fullName }).expect(400);
+    const ok = await http.post('/v1/me/profile').set(bearer('rider')).send({ fullName: '  Adébáyọ̀   Ọlọ́rùn-Bello ' }).expect(200);
+    expect(ok.body.fullName).toBe('Adébáyọ̀ Ọlọ́rùn-Bello');
+    await http.post('/v1/me/profile').set(bearer('rider')).send({ fullName: 'Bola Rider' }).expect(200);
+    const audit = await db.pool.query(`SELECT count(*)::int AS n FROM audit_event WHERE action = 'customer.name_set'`);
+    expect(audit.rows[0].n).toBe(2);
+  });
+
+  it('one open application per product; a withdrawn one can be replaced', async () => {
+    const first = await http.post('/v1/me/applications').set(bearer('rider')).send({ productCode: 'motorcycle_ride_to_own' }).expect(201);
+    // two taps at once: exactly one more is refused, none slips through
+    const dup = await Promise.all([1, 2].map(() => http.post('/v1/me/applications').set(bearer('rider')).send({ productCode: 'motorcycle_ride_to_own' })));
+    expect(dup.map((d) => d.status)).toEqual([409, 409]);
+    expect(dup[0]!.body).toMatchObject({ error: 'application_open', reference: first.body.reference });
+    await http.post(`/v1/me/applications/${first.body.reference}/withdraw`).set(bearer('other')).expect(404);
+    await http.post(`/v1/me/applications/${first.body.reference}/withdraw`).set(bearer('rider')).expect(200);
+    await http.post(`/v1/me/applications/${first.body.reference}/withdraw`).set(bearer('rider')).expect(409);
+  });
+
   it('rider applies and gets a repayment account', async () => {
     const r = await http.post('/v1/me/applications').set(bearer('rider')).send({ productCode: 'motorcycle_ride_to_own' }).expect(201);
     reference = r.body.reference;
@@ -104,6 +133,13 @@ describe('motorcycle ride-to-own over HTTP', () => {
     expect(r.body.terms.depositBps).toBe(2000);
   });
 
+
+  it('locks the name once an application is approved', async () => {
+    const r = await http.post('/v1/me/profile').set(bearer('rider')).send({ fullName: 'Somebody Else' }).expect(409);
+    expect(r.body.error).toBe('name_locked');
+    expect((await http.get('/v1/me').set(bearer('rider')).expect(200)).body.fullName).toBe('Bola Rider');
+    await http.post(`/v1/me/applications/${reference}/withdraw`).set(bearer('rider')).expect(409);
+  });
   it('activation waits for the deposit, then succeeds', async () => {
     await http.post(`/v1/admin/lending/accounts/${reference}/activate`).set(bearer('mgr')).send({}).expect(409);
     await http
@@ -133,6 +169,7 @@ describe('motorcycle ride-to-own over HTTP', () => {
 
 describe('two-person approval over HTTP', () => {
   it('out-of-bounds terms go to a manager; the underwriter cannot confirm their own', async () => {
+    await http.post('/v1/me/profile').set(bearer('other')).send({ fullName: 'Ada Other' }).expect(200);
     const app1 = await http.post('/v1/me/applications').set(bearer('other')).send({ productCode: 'motorcycle_ride_to_own' }).expect(201);
     const ref = app1.body.reference;
     const body = { tier: 'B', assetPriceKobo: '150000000', adjustments: { tenorPeriods: 90 } };

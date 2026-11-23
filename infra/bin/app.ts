@@ -13,6 +13,7 @@ import { WafStack } from '../lib/waf-stack.js';
 const app = new App();
 const appsDir = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', 'apps');
 const webApps = [
+  { prefix: 'app' as const, distPath: join(appsDir, 'web', 'dist') },
   { prefix: 'console' as const, distPath: join(appsDir, 'console', 'dist') },
   { prefix: 'sign' as const, distPath: join(appsDir, 'sign', 'dist') },
 ];
