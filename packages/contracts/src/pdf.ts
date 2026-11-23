@@ -1,4 +1,25 @@
-import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
+import { readFileSync } from 'node:fs';
+import fontkit from '@pdf-lib/fontkit';
+import { PDFDocument, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
+
+// Noto Sans (SIL Open Font License, fonts/OFL.txt): covers Yoruba, Igbo and Hausa letters and ₦.
+let fontBytes: { regular: Uint8Array; bold: Uint8Array } | null = null;
+function fonts() {
+  fontBytes ??= {
+    regular: readFileSync(new URL('../fonts/NotoSans-Regular.ttf', import.meta.url)),
+    bold: readFileSync(new URL('../fonts/NotoSans-Bold.ttf', import.meta.url)),
+  };
+  return fontBytes;
+}
+
+/** Embeds the agreement fonts into a document. */
+export async function embedAgreementFonts(pdf: PDFDocument) {
+  pdf.registerFontkit(fontkit);
+  return {
+    font: await pdf.embedFont(fonts().regular, { subset: false }),
+    bold: await pdf.embedFont(fonts().bold, { subset: false }),
+  };
+}
 
 export interface PdfSigner {
   order: number;
@@ -38,8 +59,7 @@ export async function renderAgreementPdf(input: AgreementPdfInput): Promise<Uint
   pdf.setCreator('contracts');
   pdf.setCreationDate(input.executedAt);
   pdf.setModificationDate(input.executedAt);
-  const font = await pdf.embedFont(StandardFonts.Helvetica);
-  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const { font, bold } = await embedAgreementFonts(pdf);
   const width = A4[0] - MARGIN * 2;
 
   let page = pdf.addPage(A4);
@@ -98,13 +118,7 @@ export async function renderAgreementPdf(input: AgreementPdfInput): Promise<Uint
   ))
     line(l, font, 9);
   y -= 4;
-  for (const l of wrap(
-    'This PDF is a readable copy. Some letters may be simplified (for example o for the Yoruba letter with a dot below). The signed original is the archived text file with the fingerprint above.',
-    font,
-    9,
-    width,
-  ))
-    line(l, font, 9);
+  for (const l of wrap('This PDF is a readable copy. The signed original is the archived text file with the fingerprint above.', font, 9, width)) line(l, font, 9);
 
   const pages = pdf.getPages();
   pages.forEach((p, i) => {
@@ -135,27 +149,21 @@ function roleLabel(role: string) {
 }
 
 /**
- * Standard PDF fonts cover WinAnsi only. The naira sign becomes "NGN"; letters the font lacks
- * (Yoruba ọ ẹ ṣ, Igbo ị ụ) fold to their base letter so names stay readable; anything else
- * becomes '?'. The archived text file keeps the exact characters.
+ * Keeps every character the embedded font can draw. Anything it cannot (emoji, rare scripts)
+ * keeps its base letter and drawable accents if it has them, otherwise becomes '?'. The archived
+ * text file always keeps the exact characters.
  */
 export function safe(text: string, font: PDFFont): string {
-  const ok = (ch: string) => {
-    try {
-      font.encodeText(ch);
-      return true;
-    } catch {
-      return false;
-    }
-  };
+  const set = charSets.get(font) ?? new Set(font.getCharacterSet());
+  charSets.set(font, set);
+  const ok = (str: string) => [...str].every((c) => set.has(c.codePointAt(0)!));
   let out = '';
-  const clean = text.normalize('NFC').replace(/₦/g, 'NGN ').replace(/\t/g, '    ');
+  const clean = text.normalize('NFC').replace(/\t/g, '    ');
   for (const { segment: g } of new Intl.Segmenter('en', { granularity: 'grapheme' }).segment(clean)) {
     if (ok(g)) {
       out += g;
       continue;
     }
-    // Keep the base letter and whichever accents the font can draw (ọ́ -> ó), drop the rest.
     const [base = '', ...marks] = [...g.normalize('NFD')];
     if (!ok(base)) {
       out += '?';
@@ -170,26 +178,54 @@ export function safe(text: string, font: PDFFont): string {
   }
   return out;
 }
+const charSets = new WeakMap<PDFFont, Set<number>>();
 
+/** Width of a string at size 1, cached per font: shaping through fontkit is the slow part. */
+const widths = new WeakMap<PDFFont, Map<string, number>>();
+function measure(font: PDFFont, text: string, size: number): number {
+  let m = widths.get(font);
+  if (!m) widths.set(font, (m = new Map()));
+  let w = m.get(text);
+  if (w === undefined) m.set(text, (w = font.widthOfTextAtSize(text, 1)));
+  return w * size;
+}
+
+/**
+ * Greedy word wrap. Line width is the sum of cached word widths plus spaces, with a small margin
+ * for kerning across word boundaries.
+ */
 export function wrap(text: string, font: PDFFont, size: number, width: number): string[] {
+  const limit = width - size * 0.25;
+  const space = measure(font, ' ', size);
   const out: string[] = [];
   let cur = '';
+  let curW = 0;
   for (const word of text.split(/ +/)) {
-    const next = cur ? `${cur} ${word}` : word;
-    if (font.widthOfTextAtSize(next, size) <= width) {
-      cur = next;
+    const w = measure(font, word, size);
+    if (cur && curW + space + w <= limit) {
+      cur += ` ${word}`;
+      curW += space + w;
+      continue;
+    }
+    if (!cur && w <= limit) {
+      cur = word;
+      curW = w;
       continue;
     }
     if (cur) out.push(cur);
     // A single word wider than the line (a long hash or URL) is broken by characters.
-    let w = word;
-    while (font.widthOfTextAtSize(w, size) > width) {
-      let n = w.length - 1;
-      while (n > 1 && font.widthOfTextAtSize(w.slice(0, n), size) > width) n--;
-      out.push(w.slice(0, n));
-      w = w.slice(n);
+    let rest = word;
+    while (measure(font, rest, size) > limit) {
+      let n = 1;
+      let acc = 0;
+      const chars = [...rest];
+      while (n < chars.length && acc + measure(font, chars[n - 1]!, size) <= limit) acc += measure(font, chars[n++ - 1]!, size);
+      const head = chars.slice(0, Math.max(1, n - 1)).join('');
+      out.push(head);
+      rest = rest.slice(head.length);
     }
-    cur = w;
+    cur = rest;
+    curW = measure(font, rest, size);
   }
   if (cur) out.push(cur);
   return out;

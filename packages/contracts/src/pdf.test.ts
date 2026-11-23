@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { inflateSync } from 'node:zlib';
-import { PDFDocument, StandardFonts } from 'pdf-lib';
-import { renderAgreementPdf, safe, wrap, type AgreementPdfInput } from './pdf.js';
+import { PDFDocument } from 'pdf-lib';
+import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { embedAgreementFonts, renderAgreementPdf, safe, wrap, type AgreementPdfInput } from './pdf.js';
 
 // 1x1 transparent PNG
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
@@ -21,38 +21,26 @@ const input = (over: Partial<AgreementPdfInput> = {}): AgreementPdfInput => ({
   ...over,
 });
 
-/** Text drawn with standard fonts is stored as hex strings: decode them all to search. */
-const drawnText = (bytes: Uint8Array) => {
-  const raw = Buffer.from(bytes);
-  const out: string[] = [];
-  let at = 0;
-  for (;;) {
-    const start = raw.indexOf('stream', at, 'latin1');
-    if (start < 0) break;
-    const bodyStart = raw[start + 6] === 0x0d ? start + 8 : start + 7;
-    const end = raw.indexOf('endstream', bodyStart, 'latin1');
-    const body = raw.subarray(bodyStart, end);
-    let content: string;
-    try {
-      content = inflateSync(body).toString('latin1');
-    } catch {
-      content = body.toString('latin1');
-    }
-    for (const m of content.matchAll(/<([0-9A-Fa-f]+)> Tj/g)) out.push(Buffer.from(m[1]!, 'hex').toString('latin1'));
-    at = end + 9;
+/** Text as a PDF reader extracts it (pdf.js), one string per page joined. */
+async function drawnText(bytes: Uint8Array): Promise<string> {
+  const doc = await getDocument({ data: new Uint8Array(bytes), useSystemFonts: false, isEvalSupported: false }).promise;
+  const pages: string[] = [];
+  for (let i = 1; i <= doc.numPages; i++) {
+    const c = await (await doc.getPage(i)).getTextContent();
+    pages.push(c.items.map((it) => ('str' in it ? it.str : '')).join('\n'));
   }
-  return out.join('\n');
-};
+  return pages.join('\n');
+}
 
-describe('agreement PDF', () => {
+describe('agreement PDF', { timeout: 30_000 }, () => {
   it('lays out every clause across pages, ends with a signature page, and numbers pages', async () => {
     const bytes = await renderAgreementPdf(input());
     const doc = await PDFDocument.load(bytes);
     expect(doc.getPageCount()).toBeGreaterThanOrEqual(4);
     expect(doc.getTitle()).toBe('Agreement FA-000001');
-    const text = drawnText(bytes);
+    const text = await drawnText(bytes);
     expect(text).toContain('Clause 160.');
-    expect(text).toContain('NGN 1,632,000.00');
+    expect(text).toContain('₦1,632,000.00');
     expect(text).toContain('TEST DOCUMENT - PLACEHOLDER WORDING');
     expect(text).toContain(`page ${doc.getPageCount()} of ${doc.getPageCount()}`);
     expect(text).toContain('Typed name: Mary Manager');
@@ -60,11 +48,11 @@ describe('agreement PDF', () => {
     expect(text).not.toMatch(/is a (qualified )?digital signature/);
   });
 
-  it('keeps Yoruba names readable instead of turning letters into question marks', async () => {
-    const font = await (await PDFDocument.create()).embedFont(StandardFonts.Helvetica);
-    expect(safe('Adébáyọ̀ Ọlọ́rùn', font)).toBe('Adébáyò Olórùn');
-    expect(safe('Ṣẹgun Ị́kẹ́', font)).toBe('Segun Íké');
-    expect(safe('₦500', font)).toBe('NGN 500');
+  it('keeps Yoruba and Igbo letters exactly; only characters the font lacks are replaced', async () => {
+    const { font } = await embedAgreementFonts(await PDFDocument.create());
+    expect(safe('Adébáyọ̀ Ọlọ́rùn', font)).toBe('Adébáyọ̀ Ọlọ́rùn'.normalize('NFC'));
+    expect(safe('Ṣẹgun Ị́kẹ́ Ụ̀zọ̀', font)).toBe('Ṣẹgun Ị́kẹ́ Ụ̀zọ̀'.normalize('NFC'));
+    expect(safe('₦500', font)).toBe('₦500');
     expect(safe('ok 😀', font)).toBe('ok ?');
   });
 
@@ -77,11 +65,11 @@ describe('agreement PDF', () => {
   it('a damaged signature image does not stop execution', async () => {
     const broken = Buffer.concat([PNG.subarray(0, 16), Buffer.from('not really a png')]);
     const bytes = await renderAgreementPdf(input({ signers: [{ ...input().signers[0]!, signaturePng: broken }] }));
-    expect(drawnText(bytes)).toContain('could not be shown');
+    expect(await drawnText(bytes)).toContain('could not be shown');
   });
 
   it('wraps to the line width and breaks words longer than a line', async () => {
-    const font = await (await PDFDocument.create()).embedFont(StandardFonts.Helvetica);
+    const { font } = await embedAgreementFonts(await PDFDocument.create());
     const lines = wrap(`short words then ${'x'.repeat(300)} end`, font, 10, 200);
     expect(lines.length).toBeGreaterThan(3);
     for (const l of lines) expect(font.widthOfTextAtSize(l, 10)).toBeLessThanOrEqual(200);

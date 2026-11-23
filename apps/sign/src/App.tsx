@@ -94,7 +94,7 @@ export function App() {
           <p>
             {next === 'guarantor'
               ? 'Your guarantor will now get their own SMS link to sign on their phone.'
-              : 'The company will now countersign. We will send you a copy of the signed agreement.'}
+              : 'The company will now countersign. Once it is fully signed, ask our team for a copy of the signed agreement.'}
           </p>
           <p className="muted">You can close this page.</p>
         </section>

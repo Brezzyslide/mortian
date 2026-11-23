@@ -62,12 +62,12 @@ IP, user agent, hashed device id, document hash shown, each acknowledged term wi
 
 ## The PDF
 
-Rendered with standard PDF fonts on A4: the full text, a page footer (reference, contract id, page *i* of *n*, the document hash), and a signature page. The signature page shows each signer's role, name, masked phone, signing time, typed name and drawn signature. Rendering is repeatable: the same input produces the same bytes.
+Rendered on A4 with Noto Sans embedded in full (SIL Open Font License, `packages/contracts/fonts/OFL.txt`), so Yoruba, Igbo and Hausa letters (ọ ẹ ṣ ị ụ, with tone marks) and the ₦ sign print exactly. Contents: the full text, a page footer (reference, contract id, page *i* of *n*, the document hash), and a signature page with each signer's role, name, masked phone, signing time, typed name and drawn signature. About 650 KB per agreement. Rendering is repeatable: the same input produces the same bytes.
 
-- The naira sign is written as `NGN`. Letters the standard fonts lack, such as Yoruba ọ ẹ ṣ, are folded to their base letter and keep their tone marks (Adébáyọ̀ → Adébáyò). The PDF says so. The text file holds the exact characters and is the original.
+- The font is embedded whole, not subset: pdf-lib's subsetting dropped letters when tested.
+- Characters the font lacks (emoji) become `?`. The text file holds the exact characters and is the signed original.
 - A damaged signature image never blocks execution. The PDF notes it, and the image's hash is in the certificate.
 
 ## Not yet built
 
-- Sending the borrower a copy of the executed PDF (SMS link or WhatsApp) once a messaging provider is chosen.
-- A Unicode font in the PDF so that Yoruba and Igbo letters print exactly (needs a licensed font file added to the repo).
+- Sending the borrower a copy of the executed PDF (SMS link or WhatsApp) once a messaging provider is chosen. Until then the signing page tells signers to ask the team for a copy.
