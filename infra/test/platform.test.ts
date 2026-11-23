@@ -41,6 +41,7 @@ function build(settings: StageSettings, domain?: { name: string; certificateArn:
     alb: api.alb,
     webAclArn: waf.webAclArn,
     webApps: [
+      { prefix: 'app', distPath: consoleDist },
       { prefix: 'console', distPath: consoleDist },
       { prefix: 'sign', distPath: consoleDist },
     ],
@@ -184,6 +185,7 @@ describe('edge', () => {
     staging.edge.hasResourceProperties('AWS::CloudFront::Distribution', {
       DistributionConfig: Match.objectLike({
         CacheBehaviors: Match.arrayWith([
+          Match.objectLike({ PathPattern: '/app*', ViewerProtocolPolicy: 'redirect-to-https' }),
           Match.objectLike({ PathPattern: '/console*', ViewerProtocolPolicy: 'redirect-to-https' }),
           Match.objectLike({ PathPattern: '/sign*', ViewerProtocolPolicy: 'redirect-to-https' }),
         ]),
@@ -223,6 +225,8 @@ describe('console SPA rewrite function', () => {
     ['/console/assets/index-abc.js', '/console/assets/index-abc.js'],
     ['/console/assets/index-abc.css', '/console/assets/index-abc.css'],
     ['/sign/', '/sign/index.html'],
+    ['/app/accounts/FA-000007', '/app/index.html'],
+    ['/app/assets/index-abc.js', '/app/assets/index-abc.js'],
     ['/sign/assets/index-abc.js', '/sign/assets/index-abc.js'],
     ['/v1/health', '/v1/health'],
   ])('%s -> %s', (uri, expected) => {
@@ -232,5 +236,6 @@ describe('console SPA rewrite function', () => {
   it('redirects /console and /sign to their trailing-slash form', () => {
     expect(run('/console').statusCode).toBe(301);
     expect(run('/sign').statusCode).toBe(301);
+    expect(run('/app').statusCode).toBe(301);
   });
 });

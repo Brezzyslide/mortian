@@ -11,7 +11,7 @@ Everything is in `infra/` (AWS CDK) and deploys from GitHub Actions. The only co
 | `data` | Postgres 16 on RDS: encrypted, private, TLS forced. Generated secrets for JWT, OTP pepper, field key, webhook secret |
 | `app` | API on Fargate behind an **internal** load balancer; migrations on boot; CPU autoscaling; deployment rollback; daily arrears job at 00:05 Lagos; alert topic for job failures |
 | `waf` (us-east-1) | WAF for CloudFront: 100 requests / 5 min per IP on `/v1/auth/*` and on `/v1/sign/*`, 2,000 / 5 min overall, AWS IP-reputation, known-bad-inputs and common rule sets |
-| `edge` | CloudFront: API via a private VPC origin (no caching) the staff console at `/console/` and the signing page at `/sign/` from a private bucket, HTTPS only |
+| `edge` | CloudFront: API via a private VPC origin (no caching) the customer app at `/app/`, the staff console at `/console/` and the signing page at `/sign/` from a private bucket, HTTPS only |
 
 The API has no public IP or listener. Its only way in is CloudFront → VPC origin → internal load balancer, and the load balancer accepts only CloudFront's origin-facing addresses.
 

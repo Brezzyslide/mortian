@@ -60,8 +60,13 @@ export class CollectionsService {
     return this.collections.info.provider;
   }
 
-  async openAccount(personId: string, productCode: FinanceProductCode): Promise<{ id: string; reference: string }> {
-    const { rows } = await this.pool.query<{ id: string; reference: string }>(
+  /** Opens a finance account; pass a client to do it inside the caller's transaction. */
+  async openAccount(
+    personId: string,
+    productCode: FinanceProductCode,
+    db: Pick<PoolLike, 'query'> = this.pool,
+  ): Promise<{ id: string; reference: string }> {
+    const { rows } = await db.query<{ id: string; reference: string }>(
       `INSERT INTO finance_account (person_id, product_code) VALUES ($1, $2) RETURNING id, reference`,
       [personId, productCode],
     );
