@@ -15,7 +15,8 @@ apps/
   sign/       signer / guarantor web flow (React + Vite)
 packages/
   domain/     money (kobo), brand config, shared types and state machines
-  ledger/     double-entry posting rules and allocation engine
+  db/         SQL migrations, migration runner, test database helper
+  ledger/     double-entry posting rules, posting service and allocation engine
   adapters/   provider ports + sandbox implementations
 infra/        AWS CDK stacks
 docs/         PRD pointer, ADRs, integration matrix
@@ -25,6 +26,8 @@ docs/         PRD pointer, ADRs, integration matrix
 
 ```sh
 corepack enable
+docker compose up -d db
+export DATABASE_URL=postgres://postgres:postgres@localhost:5432/project_dev
 pnpm install
 pnpm typecheck
 pnpm test
