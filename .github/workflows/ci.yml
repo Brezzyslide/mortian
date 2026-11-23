@@ -43,3 +43,10 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm synth
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the API container image
+        run: docker build -f apps/api/Dockerfile -t api:ci .

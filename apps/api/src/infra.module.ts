@@ -4,6 +4,7 @@ import { SandboxCollections, SandboxMessaging, type Collections, type Messaging 
 import { ArrearsService, CollectionsService, LendingService } from '@project/finance';
 import { IdentityService } from '@project/identity';
 import { APP_CONFIG, type AppConfig } from './config.js';
+import { createPool } from './db.js';
 
 export const PG_POOL = Symbol('PG_POOL');
 export const MESSAGING = Symbol('MESSAGING');
@@ -25,7 +26,7 @@ export class InfraModule implements OnApplicationShutdown {
   constructor(@Inject(PG_POOL) private readonly pool: pg.Pool) {}
 
   static forRoot(config: AppConfig, overrides: InfraOverrides = {}) {
-    const pool = overrides.pool ?? new pg.Pool({ connectionString: config.DATABASE_URL, max: 10 });
+    const pool = overrides.pool ?? createPool(config);
     const messaging = overrides.messaging ?? new SandboxMessaging();
     const collections = overrides.collections ?? new SandboxCollections(config.COLLECTIONS_WEBHOOK_SECRET);
     const lending = new LendingService(pool);

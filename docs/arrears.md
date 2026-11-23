@@ -45,7 +45,7 @@ Closing does not post the asset resale yet. Shortfall or surplus postings come w
 - `GET /v1/admin/lending/arrears?status=` (collections, manager): worklist, most overdue first.
 - `GET /v1/admin/lending/portfolio` (finance, manager): accounts and principal by days-overdue bucket (current, 1–7, 8–30, 31–60, 61–90, 90+) and PAR30.
 
-## Assumptions to confirm
+## Confirmed rules (founder, 23 Nov 2026)
 
 - Penalty continues to accrue during review and while repossessed, and stops at closure.
 - The cure deadline starts when review starts, not when the asset is repossessed.

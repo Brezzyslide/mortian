@@ -4,10 +4,10 @@
  * The password is read from the environment so it does not land in shell history as an argument.
  * Sign in afterwards to enrol TOTP; no staff session is issued before that.
  */
-import pg from 'pg';
 import { SandboxMessaging } from '@project/adapters';
 import { IdentityService } from '@project/identity';
 import { loadConfig } from '../config.js';
+import { createPool } from '../db.js';
 
 const config = loadConfig();
 const { ADMIN_EMAIL, ADMIN_NAME, ADMIN_PASSWORD } = process.env;
@@ -16,7 +16,7 @@ if (!ADMIN_EMAIL || !ADMIN_NAME || !ADMIN_PASSWORD) {
   process.exit(1);
 }
 
-const pool = new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 });
+const pool = createPool(config, 2);
 const identity = new IdentityService(pool, new SandboxMessaging(), {
   issuer: config.AUTH_ISSUER,
   jwtSecret: config.AUTH_JWT_SECRET,

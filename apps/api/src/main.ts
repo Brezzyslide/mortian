@@ -1,10 +1,10 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import pg from 'pg';
 import { runMigrations } from '@project/db';
 import { AppModule } from './app.module.js';
 import { loadConfig } from './config.js';
+import { createPool } from './db.js';
 
 export async function createApp(config = loadConfig(), overrides: Parameters<typeof AppModule.forRoot>[1] = {}) {
   const app = await NestFactory.create<NestExpressApplication>(AppModule.forRoot(config, overrides), {
@@ -21,7 +21,7 @@ export async function createApp(config = loadConfig(), overrides: Parameters<typ
 async function main(): Promise<void> {
   const config = loadConfig();
   if (config.MIGRATE_ON_BOOT) {
-    const pool = new pg.Pool({ connectionString: config.DATABASE_URL, max: 1 });
+    const pool = createPool(config, 1);
     await runMigrations(pool);
     await pool.end();
   }

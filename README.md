@@ -39,4 +39,4 @@ pnpm synth        # CDK synth, no AWS credentials needed
 
 ## Status
 
-Phase 0 scaffold. See `docs/integrations.md` for what is live, simulated or blocked. Nothing in this repo talks to a real provider yet.
+Phase 1 money engine and AWS stacks. See `docs/integrations.md` for what is live, simulated or blocked. Nothing in this repo talks to a real provider yet.

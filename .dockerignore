@@ -1,0 +1,15 @@
+**/node_modules
+**/dist
+**/.turbo
+**/coverage
+infra/cdk.out
+.git
+.github
+.env
+.env.*
+docs
+apps/web
+apps/console
+apps/sign
+apps/rider
+infra
