@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { BadRequestException, Body, Controller, Get, HttpCode, Inject, NotFoundException, Param, Post } from '@nestjs/common';
 import { z } from 'zod';
 import { SandboxCollections, type Collections } from '@project/adapters';
-import { CollectionsService } from '@project/finance';
+import { CollectionsService, LendingService } from '@project/finance';
+import { applyAfterPayment } from './apply-after-payment.js';
 import type { AccessClaims } from '@project/identity';
 import { Auth, StaffRoles } from '../auth/decorators.js';
 import { parseBody } from '../http.js';
@@ -24,6 +25,7 @@ export class PaymentsAdminController {
   constructor(
     @Inject(CollectionsService) private readonly service: CollectionsService,
     @Inject(COLLECTIONS) private readonly collections: Collections,
+    @Inject(LendingService) private readonly lending: LendingService,
   ) {}
 
   @StaffRoles('finance')
@@ -73,6 +75,8 @@ export class PaymentsAdminController {
       amountKobo: b.amountKobo,
       paidAt: new Date().toISOString(),
     });
-    return this.service.ingestWebhook(raw, headers);
+    const r = await this.service.ingestWebhook(raw, headers);
+    await applyAfterPayment(this.lending, r);
+    return r;
   }
 }

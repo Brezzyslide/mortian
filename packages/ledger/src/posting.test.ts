@@ -11,6 +11,7 @@ import {
   LedgerValidationError,
   loadEntry,
   postEntry,
+  postEntryInTx,
   reverseEntry,
 } from './posting.js';
 
@@ -91,6 +92,32 @@ describe('postEntry', () => {
     const loaded = await loadEntry(db.pool, entryId);
     expect(loaded.lines).toEqual(draft.lines);
     expect(await accountBalance(db.pool, 'fin:receivable:FA-E')).toBe(-huge);
+  });
+});
+
+describe('postEntryInTx', () => {
+  it('rolls back with the caller: nothing is posted if the outer transaction fails', async () => {
+    const client = await db.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await postEntryInTx(client, payment(900n, key(), 'fin:receivable:FA-TX'));
+      await client.query('ROLLBACK');
+    } finally {
+      client.release();
+    }
+    expect(await accountBalance(db.pool, 'fin:receivable:FA-TX')).toBe(0n);
+  });
+
+  it('commits with the caller', async () => {
+    const client = await db.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await postEntryInTx(client, payment(901n, key(), 'fin:receivable:FA-TX2'));
+      await client.query('COMMIT');
+    } finally {
+      client.release();
+    }
+    expect(await accountBalance(db.pool, 'fin:receivable:FA-TX2')).toBe(-901n);
   });
 });
 

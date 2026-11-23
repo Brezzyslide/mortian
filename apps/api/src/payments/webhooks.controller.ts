@@ -13,7 +13,8 @@ import {
 import type { RawBodyRequest } from '@nestjs/common';
 import type { Request } from 'express';
 import { InvalidWebhookPayloadError, InvalidWebhookSignatureError, type Collections } from '@project/adapters';
-import { CollectionsService } from '@project/finance';
+import { CollectionsService, LendingService } from '@project/finance';
+import { applyAfterPayment } from './apply-after-payment.js';
 import { Public } from '../auth/decorators.js';
 import { COLLECTIONS } from '../infra.module.js';
 
@@ -24,6 +25,7 @@ export class WebhooksController {
   constructor(
     @Inject(COLLECTIONS) private readonly collections: Collections,
     @Inject(CollectionsService) private readonly service: CollectionsService,
+    @Inject(LendingService) private readonly lending: LendingService,
   ) {}
 
   /**
@@ -39,6 +41,7 @@ export class WebhooksController {
     if (!req.rawBody) throw new BadRequestException();
     try {
       const r = await this.service.ingestWebhook(req.rawBody, req.headers);
+      await applyAfterPayment(this.lending, r);
       return { received: true, outcome: r.outcome };
     } catch (err) {
       if (err instanceof InvalidWebhookSignatureError) {

@@ -1,7 +1,7 @@
 import { Global, Inject, Module, type OnApplicationShutdown } from '@nestjs/common';
 import pg from 'pg';
 import { SandboxCollections, SandboxMessaging, type Collections, type Messaging } from '@project/adapters';
-import { CollectionsService } from '@project/finance';
+import { CollectionsService, LendingService } from '@project/finance';
 import { IdentityService } from '@project/identity';
 import { APP_CONFIG, type AppConfig } from './config.js';
 
@@ -45,8 +45,9 @@ export class InfraModule implements OnApplicationShutdown {
           }),
         },
         { provide: CollectionsService, useValue: new CollectionsService(pool, collections) },
+        { provide: LendingService, useValue: new LendingService(pool) },
       ],
-      exports: [APP_CONFIG, PG_POOL, MESSAGING, COLLECTIONS, IdentityService, CollectionsService],
+      exports: [APP_CONFIG, PG_POOL, MESSAGING, COLLECTIONS, IdentityService, CollectionsService, LendingService],
     };
   }
 

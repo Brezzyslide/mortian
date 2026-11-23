@@ -27,7 +27,14 @@ export const clearingAccount = (provider: string) => `fin:clearing:${provider}`;
 
 export type IngestResult =
   | { outcome: 'ignored' }
-  | { outcome: 'posted'; eventId: string; entryId: string; financeAccountReference: string; problem: string | null }
+  | {
+      outcome: 'posted';
+      eventId: string;
+      entryId: string;
+      financeAccountId: string;
+      financeAccountReference: string;
+      problem: string | null;
+    }
   | { outcome: 'unmatched'; eventId: string; entryId: string }
   | { outcome: 'duplicate'; eventId: string }
   | { outcome: 'conflict'; eventId: string };
@@ -171,7 +178,7 @@ export class CollectionsService {
         WHERE id = $1`,
       [eventId, entryId, fa.id, problem],
     );
-    return { outcome: 'posted', eventId, entryId, financeAccountReference: fa.reference, problem };
+    return { outcome: 'posted', eventId, entryId, financeAccountId: fa.id, financeAccountReference: fa.reference, problem };
   }
 
   /** The exceptions queue: payments a person must review. Oldest first. */

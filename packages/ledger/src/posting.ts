@@ -65,25 +65,42 @@ const UNIQUE_VIOLATION = '23505';
  * returns the original entry id with duplicate=true and writes nothing.
  */
 export async function postEntry(pool: PoolLike, entry: EntryDraft): Promise<PostResult> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await postEntryInTx(client, entry);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Posts one entry inside a transaction the caller has already opened, so the posting
+ * commits or rolls back together with the caller's other writes (allocation rows,
+ * status changes). Same validation and idempotency rules as postEntry.
+ */
+export async function postEntryInTx(tx: Queryable, entry: EntryDraft): Promise<PostResult> {
   const errors = validateEntry(entry);
   if (errors.length > 0) throw new LedgerValidationError(errors);
 
   const book = bookOf(entry.lines[0]!.account) as Book;
   const hash = payloadHash(entry);
-  const client = await pool.connect();
 
   try {
-    await client.query('BEGIN');
-
     const accounts = [...new Set(entry.lines.map((l) => l.account))];
-    await client.query(
+    await tx.query(
       `INSERT INTO ledger_account (code, book)
        SELECT unnest($1::text[]), $2
        ON CONFLICT (code) DO NOTHING`,
       [accounts, book],
     );
 
-    const inserted = await client.query<{ id: string }>(
+    const inserted = await tx.query<{ id: string }>(
       `INSERT INTO ledger_entry
          (idempotency_key, payload_hash, book, source, actor_id, description, occurred_at, reverses_entry_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -102,10 +119,7 @@ export async function postEntry(pool: PoolLike, entry: EntryDraft): Promise<Post
     );
 
     if (inserted.rows.length === 0) {
-      await client.query('ROLLBACK');
-      // Reuse this connection: taking a second one from the pool while holding this one
-      // deadlocks under concurrent duplicate webhooks once the pool is exhausted.
-      const existing = await client.query<{ id: string; payload_hash: string }>(
+      const existing = await tx.query<{ id: string; payload_hash: string }>(
         'SELECT id, payload_hash FROM ledger_entry WHERE idempotency_key = $1',
         [entry.idempotencyKey],
       );
@@ -115,7 +129,7 @@ export async function postEntry(pool: PoolLike, entry: EntryDraft): Promise<Post
     }
 
     const entryId = inserted.rows[0]!.id;
-    await client.query(
+    await tx.query(
       `INSERT INTO ledger_line (entry_id, book, account_code, side, amount)
        SELECT $1, $2, a, s, m::bigint
          FROM unnest($3::text[], $4::text[], $5::text[]) AS t(a, s, m)`,
@@ -127,17 +141,12 @@ export async function postEntry(pool: PoolLike, entry: EntryDraft): Promise<Post
         entry.lines.map((l) => l.amount.toString()),
       ],
     );
-
-    await client.query('COMMIT');
     return { entryId, duplicate: false };
   } catch (err) {
-    await client.query('ROLLBACK').catch(() => undefined);
     if (isUniqueViolation(err, 'ledger_entry_reverses_entry_id_key') && entry.reversesEntryId) {
       throw new AlreadyReversedError(entry.reversesEntryId);
     }
     throw err;
-  } finally {
-    client.release();
   }
 }
 
