@@ -22,8 +22,17 @@ const schema = z
     AUTH_OTP_PEPPER: base64Key(32, false),
     AUTH_FIELD_KEY: base64Key(32, true),
     MESSAGING_PROVIDER: z.enum(['sandbox']).default('sandbox'),
+    COLLECTIONS_PROVIDER: z.enum(['sandbox']).default('sandbox'),
+    COLLECTIONS_WEBHOOK_SECRET: z.string().min(16),
   })
   .superRefine((c, ctx) => {
+    if (c.APP_ENV === 'production' && c.COLLECTIONS_PROVIDER === 'sandbox') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['COLLECTIONS_PROVIDER'],
+        message: 'sandbox collections is not allowed in production: no real money would be collected',
+      });
+    }
     if (c.APP_ENV === 'production' && c.MESSAGING_PROVIDER === 'sandbox') {
       ctx.addIssue({
         code: 'custom',

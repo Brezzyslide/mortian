@@ -56,14 +56,35 @@ export interface IncomingPayment {
   readonly providerReference: string;
   readonly virtualAccountNumber: string;
   readonly amount: Kobo;
-  readonly receivedAt: Date;
+  /** When the payer's money arrived, according to the provider. */
+  readonly paidAt: Date;
+  /** The provider's parsed body, stored as received. */
+  readonly raw: unknown;
+}
+
+export class InvalidWebhookSignatureError extends Error {
+  constructor() {
+    super('Webhook signature is missing or invalid');
+    this.name = 'InvalidWebhookSignatureError';
+  }
+}
+
+export class InvalidWebhookPayloadError extends Error {
+  constructor(detail: string) {
+    super(`Webhook payload rejected: ${detail}`);
+    this.name = 'InvalidWebhookPayloadError';
+  }
 }
 
 export interface Collections {
   readonly info: AdapterInfo;
   createVirtualAccount(financeAccountId: string, customerName: string): Promise<VirtualAccount>;
-  /** Verifies the provider signature and parses the body. Throws on an invalid signature. */
-  parseWebhook(rawBody: string, headers: Record<string, string>): IncomingPayment;
+  /**
+   * Verifies the provider signature over the exact raw bytes, then parses the body.
+   * Throws InvalidWebhookSignatureError or InvalidWebhookPayloadError.
+   * Returns null for event types that are not incoming payments (acknowledged, ignored).
+   */
+  parseWebhook(rawBody: Buffer, headers: Record<string, string | string[] | undefined>): IncomingPayment | null;
 }
 
 // ---------- Messaging ----------

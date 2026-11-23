@@ -7,7 +7,7 @@ Status values: **live** (real provider, production credentials), **sandbox-real*
 | IdentityVerification | Smile ID, Youverify, Prembly, Dojah, VerifyMe | `SandboxIdentityVerification` | simulated |
 | CreditCheck | CRC, FirstCentral, CreditRegistry, CreditChek | — | interface |
 | BankDataInsight | Mono, Okra | — | not started (Phase 3) |
-| Collections | Paystack, Monnify, Flutterwave | — | interface |
+| Collections | Paystack, Monnify, Flutterwave | `SandboxCollections` (own webhook format, HMAC-SHA512; refused in production config) | simulated |
 | Payouts | Paystack, Monnify, Flutterwave | — | not started (Phase 1) |
 | ConditionalSettlement | authorised bank/payment partner | — | blocked: no partner |
 | Messaging | Termii, Africa's Talking, WhatsApp Business, Firebase | `SandboxMessaging` (in-memory outbox; refused in production config) | simulated |

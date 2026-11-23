@@ -4,4 +4,5 @@
 - **Integration matrix:** [integrations.md](integrations.md)
 - **Architecture decisions:** [adr/](adr/)
 - **Authentication and roles:** [auth.md](auth.md)
+- **Collections and payment exceptions:** [payments.md](payments.md)
 - **Deployment setup:** [deploy.md](deploy.md)

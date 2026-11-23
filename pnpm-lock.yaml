@@ -35,6 +35,9 @@ importers:
       '@project/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@project/finance':
+        specifier: workspace:*
+        version: link:../../packages/finance
       '@project/identity':
         specifier: workspace:*
         version: link:../../packages/identity
@@ -240,6 +243,34 @@ importers:
 
   packages/domain:
     devDependencies:
+      typescript:
+        specifier: ~5.8.3
+        version: 5.8.3
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.7(@types/node@22.20.5)(tsx@4.23.15)
+
+  packages/finance:
+    dependencies:
+      '@project/adapters':
+        specifier: workspace:*
+        version: link:../adapters
+      '@project/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@project/identity':
+        specifier: workspace:*
+        version: link:../identity
+      '@project/ledger':
+        specifier: workspace:*
+        version: link:../ledger
+    devDependencies:
+      '@project/db':
+        specifier: workspace:*
+        version: link:../db
+      '@types/node':
+        specifier: ^22.15.0
+        version: 22.20.5
       typescript:
         specifier: ~5.8.3
         version: 5.8.3

@@ -20,6 +20,7 @@ const config = loadConfig({
   AUTH_JWT_SECRET: randomBytes(32).toString('base64'),
   AUTH_OTP_PEPPER: randomBytes(32).toString('base64'),
   AUTH_FIELD_KEY: randomBytes(32).toString('base64'),
+  COLLECTIONS_WEBHOOK_SECRET: 'e2e-webhook-secret-1',
 });
 
 beforeAll(async () => {

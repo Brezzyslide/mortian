@@ -17,6 +17,7 @@
     "@project/adapters": "workspace:*",
     "@project/db": "workspace:*",
     "@project/domain": "workspace:*",
+    "@project/finance": "workspace:*",
     "@project/identity": "workspace:*",
     "@project/ledger": "workspace:*",
     "pg": "^8.23.1",
