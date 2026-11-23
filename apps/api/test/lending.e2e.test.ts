@@ -21,6 +21,7 @@ const config = loadConfig({
   AUTH_JWT_SECRET: randomBytes(32).toString('base64'),
   AUTH_OTP_PEPPER: randomBytes(32).toString('base64'),
   AUTH_FIELD_KEY: randomBytes(32).toString('base64'),
+  REQUIRE_SIGNED_CONTRACT: 'false', // these suites cover lending, not signing (see contracts.e2e)
   COLLECTIONS_WEBHOOK_SECRET: 'e2e-lending-secret-1',
 });
 

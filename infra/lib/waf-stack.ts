@@ -46,15 +46,35 @@ export class WafStack extends Stack {
           visibilityConfig: { cloudWatchMetricsEnabled: true, metricName: 'auth-rate-limit', sampledRequestsEnabled: true },
         },
         {
-          name: 'global-rate-limit',
+          name: 'signing-rate-limit',
           priority: 1,
+          action: { block: {} },
+          statement: {
+            rateBasedStatement: {
+              limit: props.authRequestsPer5Min ?? 100,
+              aggregateKeyType: 'IP',
+              scopeDownStatement: {
+                byteMatchStatement: {
+                  fieldToMatch: { uriPath: {} },
+                  positionalConstraint: 'STARTS_WITH',
+                  searchString: '/v1/sign/',
+                  textTransformations: [{ priority: 0, type: 'LOWERCASE' }],
+                },
+              },
+            },
+          },
+          visibilityConfig: { cloudWatchMetricsEnabled: true, metricName: 'signing-rate-limit', sampledRequestsEnabled: true },
+        },
+        {
+          name: 'global-rate-limit',
+          priority: 2,
           action: { block: {} },
           statement: { rateBasedStatement: { limit: props.allRequestsPer5Min ?? 2000, aggregateKeyType: 'IP' } },
           visibilityConfig: { cloudWatchMetricsEnabled: true, metricName: 'global-rate-limit', sampledRequestsEnabled: true },
         },
-        managed('AWSManagedRulesAmazonIpReputationList', 2),
-        managed('AWSManagedRulesKnownBadInputsRuleSet', 3),
-        managed('AWSManagedRulesCommonRuleSet', 4),
+        managed('AWSManagedRulesAmazonIpReputationList', 3),
+        managed('AWSManagedRulesKnownBadInputsRuleSet', 4),
+        managed('AWSManagedRulesCommonRuleSet', 5),
       ],
     });
 

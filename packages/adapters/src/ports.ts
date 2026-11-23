@@ -94,3 +94,16 @@ export interface Messaging {
   readonly info: AdapterInfo;
   send(channel: Channel, to: string, templateId: string, vars: Record<string, string>): Promise<{ id: string }>;
 }
+
+// ---------- Document archive ----------
+export interface StoredDocument {
+  readonly key: string;
+  readonly sha256: string;
+}
+
+export interface DocumentStore {
+  readonly info: AdapterInfo;
+  /** Writes once. Implementations must refuse to overwrite an existing key. */
+  put(key: string, body: Buffer, contentType: string): Promise<StoredDocument>;
+  get(key: string): Promise<Buffer>;
+}

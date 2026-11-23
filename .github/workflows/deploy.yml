@@ -59,6 +59,7 @@ jobs:
           else
             STACKS='project-name-staging-*'
             EXTRA=""
+            if [ -n "${{ vars.STAGING_PUBLIC_BASE_URL }}" ]; then EXTRA="-c stagingPublicBaseUrl=${{ vars.STAGING_PUBLIC_BASE_URL }}"; fi
           fi
           ALERT=""
           if [ -n "${{ vars.ALERT_EMAIL }}" ]; then ALERT="-c alertEmail=${{ vars.ALERT_EMAIL }}"; fi

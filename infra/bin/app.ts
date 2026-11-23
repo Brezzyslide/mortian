@@ -17,6 +17,8 @@ const slug: string = app.node.tryGetContext('projectSlug');
 const githubRepo: string = app.node.tryGetContext('githubRepo');
 const region: string = app.node.tryGetContext('region');
 const alertEmail: string | undefined = app.node.tryGetContext('alertEmail') || undefined;
+// Set after the first deploy (the CloudFront URL, or the domain): -c stagingPublicBaseUrl=https://xyz.cloudfront.net
+const stagingPublicBaseUrl: string | undefined = app.node.tryGetContext('stagingPublicBaseUrl') || undefined;
 // Production is only defined once a domain and certificate exist:  -c prodDomain=api.example.com -c prodCertificateArn=arn:...
 const prodDomain: string | undefined = app.node.tryGetContext('prodDomain') || undefined;
 const prodCertificateArn: string | undefined = app.node.tryGetContext('prodCertificateArn') || undefined;
@@ -50,7 +52,14 @@ for (const settings of stages) {
     db: data.db,
     dbName: data.dbName,
     appSecrets: data.appSecrets,
+    contractsBucket: core.contractsBucket,
+    dataKey: core.dataKey,
     ...(alertEmail ? { alertEmail } : {}),
+    ...(settings.stage === 'prod'
+      ? { publicBaseUrl: `https://${prodDomain}` }
+      : stagingPublicBaseUrl
+        ? { publicBaseUrl: stagingPublicBaseUrl }
+        : {}),
   });
   const waf = new WafStack(app, `${p}-waf`, { env: usEast1, crossRegionReferences: true });
   new EdgeStack(app, `${p}-edge`, {

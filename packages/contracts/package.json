@@ -1,0 +1,32 @@
+{
+  "name": "@project/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@project/adapters": "workspace:*",
+    "@project/domain": "workspace:*",
+    "@project/finance": "workspace:*",
+    "@project/identity": "workspace:*"
+  },
+  "devDependencies": {
+    "@project/db": "workspace:*",
+    "@types/node": "^22.15.0",
+    "fast-check": "^4.11.0",
+    "typescript": "~5.8.3",
+    "vitest": "^3.2.0"
+  }
+}

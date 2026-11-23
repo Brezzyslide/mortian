@@ -31,7 +31,7 @@ beforeAll(async () => {
   const p = await db.pool.query(`INSERT INTO person (email) VALUES ('a@x.com'), ('b@x.com') RETURNING id`);
   staffA = p.rows[0].id;
   staffB = p.rows[1].id;
-  const l = new LendingService(db.pool, clock);
+  const l = new LendingService(db.pool, clock, { requireSignedContract: false });
   for (const [tier, config] of Object.entries(MOTORCYCLE_PLACEHOLDER_TIERS)) {
     await l.publishTier('motorcycle_ride_to_own', tier, config, { actorId: null, isPlaceholder: true });
   }
@@ -40,7 +40,7 @@ afterAll(async () => db?.drop());
 beforeEach(() => {
   today = '2026-12-01';
   messaging = new SandboxMessaging();
-  lending = new LendingService(db.pool, clock);
+  lending = new LendingService(db.pool, clock, { requireSignedContract: false });
   arrears = new ArrearsService(db.pool, lending, messaging, clock);
   collections = new CollectionsService(db.pool, provider);
 });

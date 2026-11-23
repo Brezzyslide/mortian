@@ -5,6 +5,9 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as events from 'aws-cdk-lib/aws-events';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import type * as kms from 'aws-cdk-lib/aws-kms';
+import type * as s3 from 'aws-cdk-lib/aws-s3';
 import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import type * as rds from 'aws-cdk-lib/aws-rds';
@@ -24,6 +27,10 @@ export interface AppStackProps extends StackProps {
   readonly dbName: string;
   readonly appSecrets: Record<'jwt' | 'otpPepper' | 'fieldKey' | 'webhook', secrets.ISecret>;
   readonly alertEmail?: string;
+  readonly contractsBucket: s3.IBucket;
+  readonly dataKey: kms.IKey;
+  /** Public base URL (https://host). Signer links become <publicBaseUrl>/sign/#token. */
+  readonly publicBaseUrl?: string;
 }
 
 const REPO_ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..');
@@ -57,6 +64,8 @@ export class AppStack extends Stack {
       DB_SSL_CA_FILE: '/etc/rds/global-bundle.pem',
       MESSAGING_PROVIDER: 'sandbox',
       COLLECTIONS_PROVIDER: 'sandbox',
+      CONTRACTS_BUCKET: props.contractsBucket.bucketName,
+      ...(props.publicBaseUrl ? { SIGNING_BASE_URL: `${props.publicBaseUrl.replace(/\/$/, '')}/sign/` } : {}),
     };
     const dbSecret = props.db.secret!;
     const secretsMap: Record<string, ecs.Secret> = {
@@ -88,6 +97,18 @@ export class AppStack extends Stack {
         startPeriod: Duration.seconds(60),
       },
     });
+
+    // Write-once access to the contracts archive. Identity policies only (the key policy trusts the
+    // account), so the core stack never needs to reference this one.
+    apiTask.addToTaskRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['s3:PutObject', 's3:GetObject'],
+        resources: [props.contractsBucket.arnForObjects('contracts/*')],
+      }),
+    );
+    apiTask.addToTaskRolePolicy(
+      new iam.PolicyStatement({ actions: ['kms:GenerateDataKey', 'kms:Decrypt'], resources: [props.dataKey.keyArn] }),
+    );
 
     const service = new ecs.FargateService(this, 'ApiService', {
       cluster,

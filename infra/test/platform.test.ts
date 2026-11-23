@@ -30,6 +30,9 @@ function build(settings: StageSettings, domain?: { name: string; certificateArn:
     db: data.db,
     dbName: data.dbName,
     appSecrets: data.appSecrets,
+    contractsBucket: core.contractsBucket,
+    dataKey: core.dataKey,
+    publicBaseUrl: 'https://api.example.com',
   });
   const waf = new WafStack(app, 'waf', { env: { ...env, region: 'us-east-1' }, crossRegionReferences: true });
   const edge = new EdgeStack(app, 'edge', {
@@ -123,6 +126,15 @@ describe('application', () => {
       }
       expect(c.ReadonlyRootFilesystem).toBe(true);
     }
+  });
+
+  it('API can write and read only the contracts prefix of the archive, and knows where signers go', () => {
+    const policies = JSON.stringify(staging.app.findResources('AWS::IAM::Policy'));
+    expect(policies).toContain('/contracts/*');
+    expect(policies).not.toContain('s3:DeleteObject');
+    const defs = JSON.stringify(staging.app.findResources('AWS::ECS::TaskDefinition'));
+    expect(defs).toContain('https://api.example.com/sign/');
+    expect(defs).toContain('CONTRACTS_BUCKET');
   });
 
   it('runs the daily job at 00:05 Lagos and alerts when it fails', () => {

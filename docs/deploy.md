@@ -43,7 +43,8 @@ Staging cost: roughly US$100–150 a month in Cape Town, mostly the NAT gateway,
    - `AWS_DEPLOY_ROLE_ARN` = the `DeployRoleArn` output from step 2
    - `AWS_REGION` = `af-south-1`
    - `ALERT_EMAIL` = where job-failure alerts go (confirm the subscription email AWS sends)
-5. Push to `main` or run **Deploy** by hand. The job prints the API URL.
+5. Push to `main` or run **Deploy** by hand. The job prints the API and console URLs.
+6. Set the variable `STAGING_PUBLIC_BASE_URL` to the printed API URL (e.g. `https://d123.cloudfront.net`) and deploy again. Contract signing links are built from it; until it is set, issuing a contract returns "not configured".
 
 ## First admin
 

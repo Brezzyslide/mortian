@@ -19,8 +19,10 @@ describe('loadConfig', () => {
       DB_USER: 'app',
       DB_PASSWORD: 'p',
       DB_SSL_CA_FILE: '/etc/rds/global-bundle.pem',
+      CONTRACTS_BUCKET: 'contracts-archive',
     });
     expect(c.DB_PORT).toBe(5432);
+    expect(c.REQUIRE_SIGNED_CONTRACT).toBe(true);
     expect(c.AUTH_FIELD_KEY).toHaveLength(32);
   });
 
@@ -45,5 +47,11 @@ describe('loadConfig', () => {
     expect(() =>
       loadConfig({ ...keys, APP_ENV: 'production', DATABASE_URL: 'postgres://x', DB_SSL_CA_FILE: '/ca.pem' }),
     ).toThrow(/sandbox/);
+  });
+
+  it('staging needs a contracts archive and cannot skip signed contracts', () => {
+    const staging = { ...keys, APP_ENV: 'staging', DATABASE_URL: 'postgres://x', DB_SSL_CA_FILE: '/ca.pem' };
+    expect(() => loadConfig(staging)).toThrow(/CONTRACTS_BUCKET/);
+    expect(() => loadConfig({ ...staging, CONTRACTS_BUCKET: 'b', REQUIRE_SIGNED_CONTRACT: 'false' })).toThrow(/REQUIRE_SIGNED_CONTRACT/);
   });
 });

@@ -83,11 +83,25 @@ export interface Statement {
   } | null;
 }
 
+export interface LendingOptions {
+  /**
+   * When true (the default) an asset can only be handed over once the contract is fully signed
+   * (status 'contracted'). False exists only for tests that exercise lending without contracts;
+   * the API refuses it in production.
+   */
+  readonly requireSignedContract?: boolean;
+}
+
 export class LendingService {
+  private readonly requireSignedContract: boolean;
+
   constructor(
     private readonly pool: PoolLike,
     private readonly clock: () => Date = () => new Date(),
-  ) {}
+    options: LendingOptions = {},
+  ) {
+    this.requireSignedContract = options.requireSignedContract ?? true;
+  }
 
   today(): string {
     return lagosDate(this.clock());
@@ -229,13 +243,19 @@ export class LendingService {
   /**
    * Hands over the asset: applies the deposit from credit, books the financed principal,
    * and generates the schedule from the frozen snapshot. The deposit must already be in credit.
-   * Phase 2 adds the signed-contract gate (status 'contracted') before this step.
+   * Requires a fully signed contract (status 'contracted') unless the service was built for tests without one.
    */
   async activate(financeAccountId: string, actorId: string, startDate: string = this.today()) {
     return inTx(this.pool, async (tx) => {
       const fa = await lockAccount(tx, financeAccountId);
-      if (!['approved', 'contracted'].includes(fa.status) || !fa.current_snapshot_id) {
-        throw new LendingError('invalid_status', `Account is ${fa.status}`);
+      const allowed = this.requireSignedContract ? ['contracted'] : ['approved', 'contracted'];
+      if (!allowed.includes(fa.status) || !fa.current_snapshot_id) {
+        throw new LendingError(
+          'invalid_status',
+          fa.status === 'approved' && this.requireSignedContract
+            ? 'The contract must be fully signed before handover'
+            : `Account is ${fa.status}`,
+        );
       }
       const terms = await snapshotTerms(tx, fa.current_snapshot_id);
       const deposit = depositOf(terms);

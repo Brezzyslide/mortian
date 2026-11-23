@@ -1,6 +1,15 @@
 import { Global, Inject, Module, type OnApplicationShutdown } from '@nestjs/common';
 import pg from 'pg';
-import { SandboxCollections, SandboxMessaging, type Collections, type Messaging } from '@project/adapters';
+import {
+  MemoryDocumentStore,
+  S3DocumentStore,
+  SandboxCollections,
+  SandboxMessaging,
+  type Collections,
+  type DocumentStore,
+  type Messaging,
+} from '@project/adapters';
+import { ContractsService } from '@project/contracts';
 import { ArrearsService, CollectionsService, LendingService } from '@project/finance';
 import { IdentityService, StaffAdminService } from '@project/identity';
 import { APP_CONFIG, type AppConfig } from './config.js';
@@ -14,7 +23,10 @@ export interface InfraOverrides {
   pool?: pg.Pool;
   messaging?: Messaging;
   collections?: Collections;
+  documents?: DocumentStore;
 }
+
+export const DOCUMENTS = Symbol('DOCUMENTS');
 
 /**
  * Process-wide infrastructure: config, database pool, provider adapters, domain services.
@@ -29,7 +41,13 @@ export class InfraModule implements OnApplicationShutdown {
     const pool = overrides.pool ?? createPool(config);
     const messaging = overrides.messaging ?? new SandboxMessaging();
     const collections = overrides.collections ?? new SandboxCollections(config.COLLECTIONS_WEBHOOK_SECRET);
-    const lending = new LendingService(pool);
+    const lending = new LendingService(pool, undefined, { requireSignedContract: config.REQUIRE_SIGNED_CONTRACT });
+    const documents =
+      overrides.documents ?? (config.CONTRACTS_BUCKET ? new S3DocumentStore(config.CONTRACTS_BUCKET) : new MemoryDocumentStore());
+    const contracts = new ContractsService(pool, messaging, documents, {
+      otpPepper: config.AUTH_OTP_PEPPER,
+      signingBaseUrl: config.SIGNING_BASE_URL ?? null,
+    });
     return {
       module: InfraModule,
       providers: [
@@ -49,9 +67,11 @@ export class InfraModule implements OnApplicationShutdown {
         { provide: StaffAdminService, useValue: new StaffAdminService(pool) },
         { provide: CollectionsService, useValue: new CollectionsService(pool, collections) },
         { provide: LendingService, useValue: lending },
+        { provide: DOCUMENTS, useValue: documents },
+        { provide: ContractsService, useValue: contracts },
         { provide: ArrearsService, useValue: new ArrearsService(pool, lending, messaging) },
       ],
-      exports: [APP_CONFIG, PG_POOL, MESSAGING, COLLECTIONS, IdentityService, StaffAdminService, CollectionsService, LendingService, ArrearsService],
+      exports: [APP_CONFIG, PG_POOL, MESSAGING, COLLECTIONS, IdentityService, StaffAdminService, CollectionsService, LendingService, ArrearsService, ContractsService, DOCUMENTS],
     };
   }
 

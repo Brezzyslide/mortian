@@ -8,6 +8,7 @@ import { BigIntInterceptor } from './bigint.interceptor.js';
 import type { AppConfig } from './config.js';
 import { HealthController } from './health/health.controller.js';
 import { AuthErrorFilter } from './http.js';
+import { ContractErrorFilter, ContractsAdminController, SigningController } from './contracts/contracts.controller.js';
 import { InfraModule, type InfraOverrides } from './infra.module.js';
 import { ArrearsAdminController } from './lending/arrears-admin.controller.js';
 import { LendingAdminController } from './lending/lending-admin.controller.js';
@@ -36,10 +37,13 @@ export class AppModule {
         LendingAdminController,
         ArrearsAdminController,
         MeAccountsController,
+        ContractsAdminController,
+        SigningController,
       ],
       providers: [
         { provide: APP_GUARD, useClass: AuthGuard },
         { provide: APP_FILTER, useClass: AuthErrorFilter },
+        { provide: APP_FILTER, useClass: ContractErrorFilter },
         { provide: APP_INTERCEPTOR, useClass: BigIntInterceptor },
       ],
     };

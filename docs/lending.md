@@ -2,7 +2,9 @@
 
 ## Lifecycle so far
 
-`applied` → **approve on a tier** → `approved` → *(Phase 2: contract signed → `contracted`)* → deposit in credit → **activate** → `active` → … → `settled`
+`applied` → **approve on a tier** → `approved` → **contract signed by everyone** → `contracted` → deposit in credit → **activate** → `active` → … → `settled`
+
+Activation is refused until the contract is fully executed (see [contracts.md](contracts.md)).
 
 Arrears, penalty, repossession and reactivation: see [arrears.md](arrears.md).
 

@@ -10,7 +10,7 @@ import { MOTORCYCLE_PLACEHOLDER_TIERS } from './terms.js';
 let db: TestDatabase;
 let collections: CollectionsService;
 let now = new Date('2026-12-01T09:00:00Z');
-const lending = () => new LendingService(db.pool, () => now);
+const lending = () => new LendingService(db.pool, () => now, { requireSignedContract: false });
 const provider = new SandboxCollections('lending-test-secret-1');
 let underwriter: string;
 let manager: string;

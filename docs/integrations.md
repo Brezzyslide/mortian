@@ -14,6 +14,7 @@ Status values: **live** (real provider, production credentials), **sandbox-real*
 | Maps | Google Maps, Mapbox | — | not started (Phase 2) |
 | Telematics | Traccar, Wialon | — | not started (Phase 2) |
 | ExternalSigning | DocuSign and similar | — | optional |
+| DocumentStore | AWS S3 (contracts bucket, Object Lock) | `S3DocumentStore` (write-once, SHA-256 checked); `MemoryDocumentStore` for dev/test | live (AWS) / simulated |
 | BusinessRegistry | CAC verification | — | not started (Phase 4) |
 
 Update this file in the same commit as any adapter change.
