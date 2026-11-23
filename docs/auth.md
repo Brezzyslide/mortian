@@ -23,6 +23,11 @@ A person can hold several roles. A customer session never carries staff roles, e
 | GET | `/me` | any session |
 | GET | `/admin/audit` | staff: manager |
 | GET | `/admin/sandbox/messages` | staff: manager, sandbox messaging only |
+| GET, POST | `/admin/staff` | super_admin: list, invite |
+| PUT | `/admin/staff/:id/roles` | super_admin |
+| POST | `/admin/staff/:id/suspend`, `/reactivate`, `/reset-access`, `/reissue-link` | super_admin |
+| POST | `/auth/staff/setup` `{ token, password }` | public, one-time link |
+| POST | `/me/password` `{ currentPassword, newPassword }` | staff session |
 
 Every route is authenticated unless marked `@Public()`. Staff routes use `@StaffRoles(...)`; `super_admin` passes every staff check.
 
@@ -33,6 +38,21 @@ Every route is authenticated unless marked `@Public()`. Staff routes use `@Staff
 - Refresh tokens: rotate on every use, stored as SHA-256. Presenting a used token revokes the whole session family.
 - Staff: scrypt password hashes, lockout for 15 minutes after 5 failures, identical errors for unknown email and wrong password, TOTP secrets encrypted with AES-256-GCM, TOTP replay rejected.
 - Audit: every auth event goes to `audit_event`, which the database refuses to update or delete. No codes, passwords or secrets are logged.
+
+## Staff lifecycle (super admin, console → Staff)
+
+| Action | Effect |
+| --- | --- |
+| Invite | Creates the person with no password and returns a **one-time setup link** (72 hours, single use, stored as a hash). Hand it over privately |
+| Set password | The invitee opens the link and chooses a password; they enrol an authenticator at first sign-in |
+| Change roles | Replaces roles and signs the person out everywhere so new permissions apply at once |
+| Suspend / reactivate | Suspension signs them out and blocks sign-in |
+| Reset access | Forgotten password or lost phone: clears password and authenticator, signs out everywhere, issues a new link |
+| New link | Re-issues an expired invite; the old link stops working |
+
+Guards: nobody can suspend or reset themselves; the last active super admin cannot be demoted or suspended. Every change is in the audit log. Setup links put the token in the URL fragment (`/console/setup#…`), which browsers never send to a server or in a Referer header.
+
+Staff change their own password at console → Change password (current password required); every other session is signed out.
 
 ## First admin
 
@@ -47,4 +67,3 @@ Then sign in through `/auth/staff/login` and scan the returned `otpauthUri` into
 
 - Per-IP rate limiting at the edge (WAF rule, Phase 1 infra).
 - Secrets from AWS Secrets Manager instead of environment variables (Phase 1 infra).
-- Staff role management endpoints (grant/revoke with audit).

@@ -335,13 +335,83 @@ export class ArrearsService {
     }
   }
 
+  /**
+   * One query for every serviced account: missed instalments, amount, days overdue, principal,
+   * penalty and fees outstanding, review dates. Used by the worklist and portfolio instead of
+   * building a full statement per account. Ledger balances are read per account through the
+   * account_code index.
+   */
+  async summary(asOf: string = lagosDate(this.clock()), statuses: readonly string[] = SERVICED): Promise<AccountSummary[]> {
+    const { rows } = await this.pool.query<{
+      id: string;
+      reference: string;
+      status: string;
+      phone: string | null;
+      missed_n: number;
+      missed_amount: string;
+      oldest: string | null;
+      principal: string;
+      penalty: string;
+      fees: string;
+      cure_deadline: string | null;
+      review_started_on: string | null;
+    }>(
+      `WITH paid AS (
+         SELECT instalment_id, sum(amount) AS paid FROM allocation GROUP BY instalment_id
+       ), missed AS (
+         SELECT i.finance_account_id,
+                count(*)::int AS n,
+                sum(i.principal_due + i.interest_due - coalesce(p.paid, 0)) AS amount,
+                min(i.due_date) AS oldest
+           FROM instalment i
+           JOIN finance_account f ON f.id = i.finance_account_id AND f.current_snapshot_id = i.snapshot_id
+           LEFT JOIN paid p ON p.instalment_id = i.id
+          WHERE f.status = ANY($1) AND i.due_date < $2
+            AND i.principal_due + i.interest_due - coalesce(p.paid, 0) > 0
+          GROUP BY i.finance_account_id
+       )
+       SELECT f.id, f.reference, f.status, pe.phone,
+              coalesce(m.n, 0) AS missed_n,
+              coalesce(m.amount, 0)::text AS missed_amount,
+              to_char(m.oldest, 'YYYY-MM-DD') AS oldest,
+              ledger_balance('fin:receivable:principal:' || f.reference)::text AS principal,
+              ledger_balance('fin:receivable:penalty:' || f.reference)::text AS penalty,
+              ledger_balance('fin:receivable:fees:' || f.reference)::text AS fees,
+              to_char(f.cure_deadline, 'YYYY-MM-DD') AS cure_deadline,
+              to_char(f.review_started_on, 'YYYY-MM-DD') AS review_started_on
+         FROM finance_account f
+         JOIN person pe ON pe.id = f.person_id
+         LEFT JOIN missed m ON m.finance_account_id = f.id
+        WHERE f.status = ANY($1) AND f.current_snapshot_id IS NOT NULL
+        ORDER BY f.reference`,
+      [statuses, asOf],
+    );
+    return rows.map((r) => {
+      const missedAmount = BigInt(r.missed_amount);
+      const penalty = BigInt(r.penalty);
+      const fees = BigInt(r.fees);
+      return {
+        id: r.id,
+        reference: r.reference,
+        status: r.status,
+        phone: r.phone,
+        missedInstalments: r.missed_n,
+        missedAmount,
+        oldestDueDate: r.oldest,
+        daysOverdue: r.oldest ? daysBetween(r.oldest, asOf) : 0,
+        principalOutstanding: BigInt(r.principal),
+        penaltyOutstanding: penalty,
+        feesOutstanding: fees,
+        reactivationAmount: missedAmount + penalty + fees,
+        cureDeadline: r.cure_deadline,
+        cureDeadlinePassed: r.cure_deadline !== null && r.cure_deadline < asOf,
+        reviewStartedOn: r.review_started_on,
+      };
+    });
+  }
+
   /** Ageing buckets and portfolio at risk, by outstanding principal. */
   async portfolio(asOf: string = lagosDate(this.clock())) {
-    const { rows } = await this.pool.query<{ id: string; reference: string; current_snapshot_id: string; status: string }>(
-      `SELECT id, reference, current_snapshot_id, status FROM finance_account
-        WHERE current_snapshot_id IS NOT NULL AND status = ANY($1)`,
-      [SERVICED],
-    );
     const buckets = ['current', '1-7', '8-30', '31-60', '61-90', '90+'] as const;
     const totals = Object.fromEntries(buckets.map((b) => [b, { accounts: 0, principal: 0n }])) as Record<
       (typeof buckets)[number],
@@ -349,15 +419,13 @@ export class ArrearsService {
     >;
     let all = 0n;
     let par30 = 0n;
-    for (const r of rows) {
-      const m = await missedOf(this.pool, r.id, r.current_snapshot_id, asOf);
-      const principal = await accountBalance(this.pool, `fin:receivable:principal:${r.reference}`);
-      const d = m.daysOverdue;
+    for (const a of await this.summary(asOf)) {
+      const d = a.daysOverdue;
       const b = d === 0 ? 'current' : d <= 7 ? '1-7' : d <= 30 ? '8-30' : d <= 60 ? '31-60' : d <= 90 ? '61-90' : '90+';
       totals[b].accounts += 1;
-      totals[b].principal += principal;
-      all += principal;
-      if (d > 30) par30 += principal;
+      totals[b].principal += a.principalOutstanding;
+      all += a.principalOutstanding;
+      if (d > 30) par30 += a.principalOutstanding;
     }
     return {
       asOf,
@@ -366,6 +434,24 @@ export class ArrearsService {
       par30Percent: all === 0n ? 0 : Number((par30 * 10_000n) / all) / 100,
     };
   }
+}
+
+export interface AccountSummary {
+  readonly id: string;
+  readonly reference: string;
+  readonly status: string;
+  readonly phone: string | null;
+  readonly missedInstalments: number;
+  readonly missedAmount: bigint;
+  readonly oldestDueDate: string | null;
+  readonly daysOverdue: number;
+  readonly principalOutstanding: bigint;
+  readonly penaltyOutstanding: bigint;
+  readonly feesOutstanding: bigint;
+  readonly reactivationAmount: bigint;
+  readonly cureDeadline: string | null;
+  readonly cureDeadlinePassed: boolean;
+  readonly reviewStartedOn: string | null;
 }
 
 async function inTx<T>(pool: PoolLike, fn: (tx: Queryable) => Promise<T>): Promise<T> {

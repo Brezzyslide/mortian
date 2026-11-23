@@ -155,3 +155,70 @@ describe('staff sign-in and navigation', () => {
     await waitFor(() => expect(calls.some((c) => c.includes('/admin/lending/approvals'))).toBe(false));
   });
 });
+
+describe('setup link page', () => {
+  it('sets a password with the token from the URL fragment, then removes it from the address bar', async () => {
+    const user = userEvent.setup();
+    let sent: unknown = null;
+    handler = (url, init) => {
+      if (url === '/v1/auth/staff/setup') {
+        sent = JSON.parse(String(init?.body));
+        return { status: 200, body: { email: 'new@example.com' } };
+      }
+      return { status: 401, body: { error: 'session_invalid' } };
+    };
+    window.history.pushState({}, '', '/console/setup#tok-123456789012345678901234');
+    render(<App />);
+    await user.type(await screen.findByLabelText('New password'), 'a-long-new-password');
+    await user.type(screen.getByLabelText('Repeat it'), 'a-long-new-password');
+    await user.click(screen.getByRole('button', { name: 'Set password' }));
+    expect(await screen.findByText('Password set for new@example.com.')).toBeInTheDocument();
+    expect(sent).toEqual({ token: 'tok-123456789012345678901234', password: 'a-long-new-password' });
+    expect(window.location.hash).toBe('');
+  });
+
+  it('explains an expired or used link in plain words', async () => {
+    const user = userEvent.setup();
+    handler = (url) =>
+      url === '/v1/auth/staff/setup' ? { status: 400, body: { error: 'setup_invalid' } } : { status: 401, body: {} };
+    window.history.pushState({}, '', '/console/setup#tok-123456789012345678901234');
+    render(<App />);
+    await user.type(await screen.findByLabelText('New password'), 'a-long-new-password');
+    await user.type(screen.getByLabelText('Repeat it'), 'a-long-new-password');
+    await user.click(screen.getByRole('button', { name: 'Set password' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('expired or was already used');
+  });
+
+  it('does not call the API when the two passwords differ', async () => {
+    const user = userEvent.setup();
+    handler = () => ({ status: 401, body: {} });
+    window.history.pushState({}, '', '/console/setup#tok-123456789012345678901234');
+    render(<App />);
+    await user.type(await screen.findByLabelText('New password'), 'a-long-new-password');
+    await user.type(screen.getByLabelText('Repeat it'), 'a-different-password');
+    await user.click(screen.getByRole('button', { name: 'Set password' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('do not match');
+    expect(calls.some((c) => c.includes('/auth/staff/setup'))).toBe(false);
+  });
+});
+
+describe('staff screen', () => {
+  it('is only in the navigation for super admins, and setup links carry the token in the fragment', async () => {
+    const { setupUrl } = await import('./pages/Staff');
+    expect(setupUrl('abc')).toBe(`${window.location.origin}/console/setup#abc`);
+
+    sessionStorage.setItem('console.refresh', 'r');
+    handler = (url) => {
+      if (url === '/v1/auth/refresh') {
+        return { status: 200, body: { accessToken: jwt({ sub: 's', kind: 'staff', mfa: true, roles: ['super_admin'] }), refreshToken: 'r2' } };
+      }
+      if (url === '/v1/admin/lending/approvals') return { status: 200, body: { pending: [] } };
+      if (url.startsWith('/v1/admin/lending/accounts')) return { status: 200, body: { accounts: [] } };
+      if (url === '/v1/admin/lending/portfolio') return { status: 200, body: { asOf: 'x', buckets: {}, principalOutstanding: '0', par30Percent: 0 } };
+      return { status: 200, body: {} };
+    };
+    render(<App />);
+    const nav = await screen.findByRole('navigation');
+    expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toContain('Staff');
+  });
+});

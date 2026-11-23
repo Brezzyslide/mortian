@@ -15,6 +15,8 @@ Served at `/console/` on the same address as the API, so it calls `/v1` same-ori
 | Tiers | underwriter (view), manager (publish) | Current version per tier; publish a new version; super admin can load the labelled placeholders |
 | Products | manager (view), super admin (switch) | Live switches |
 | Audit log | manager | Append-only event log, filter by subject |
+| Staff | super_admin | Invite, change roles, suspend, reset access, re-issue setup links |
+| Change password | all staff | Own password; other sessions signed out |
 
 `super_admin` sees everything. The API enforces the same rules again, so hiding a screen is not the only control.
 
@@ -42,6 +44,5 @@ pnpm --filter @project/console dev   # http://localhost:5173/console/ (proxies /
 
 ## Known gaps
 
-- No password change or reset screen yet. A super admin cannot reset another staff member's authenticator from the console.
-- No staff management screen (create staff, grant or revoke roles). Staff are created with the CLI for now.
+- Only the very first super admin is created with the CLI; everyone else is invited from the Staff screen.
 - Tier editing is a JSON editor with server-side validation, not a form.

@@ -230,3 +230,30 @@ describe('daily job', () => {
     expect(await bookNet(db.pool, 'financing')).toBe(0n);
   });
 });
+
+describe('summary query', () => {
+  it('matches the full statement for every serviced account', async () => {
+    const asOf = '2027-01-05';
+    const rows = await arrears.summary(asOf);
+    expect(rows.length).toBeGreaterThan(3);
+    for (const r of rows) {
+      const s = await lending.statement(r.id, asOf);
+      expect({
+        missed: r.missedInstalments,
+        amount: r.missedAmount,
+        days: r.daysOverdue,
+        principal: r.principalOutstanding,
+        penalty: r.penaltyOutstanding,
+        fees: r.feesOutstanding,
+      }).toEqual({
+        missed: s.missed.instalments,
+        amount: s.missed.amount,
+        days: s.missed.daysOverdue,
+        principal: s.outstanding.principal,
+        penalty: s.outstanding.penalty,
+        fees: s.outstanding.fees,
+      });
+      if (s.arrears) expect(r.reactivationAmount).toBe(s.arrears.reactivationAmount);
+    }
+  });
+});

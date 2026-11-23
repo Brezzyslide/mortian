@@ -17,7 +17,12 @@ export class AuthError extends Error {
       | 'mfa_expired'
       | 'session_invalid'
       | 'session_reused'
-      | 'weak_password',
+      | 'weak_password'
+      | 'setup_invalid'
+      | 'last_super_admin'
+      | 'self_action'
+      | 'not_staff'
+      | 'email_taken',
     message: string = code,
   ) {
     super(message);

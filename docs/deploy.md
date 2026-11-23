@@ -58,7 +58,7 @@ aws ecs run-task --cluster <ClusterName> --launch-type FARGATE \
                    {"name":"ADMIN_PASSWORD","value":"<at least 12 characters>"}]}]}'
 ```
 
-Task overrides are visible to anyone in the account who can describe ECS tasks; today that is only you. Then sign in at `POST /v1/auth/staff/login` and scan the returned `otpauthUri` into an authenticator app.
+Task overrides are visible to anyone in the account who can describe ECS tasks; today that is only you. Then open the console URL from the deploy output, sign in and scan the QR code into an authenticator app. Invite everyone else from console → Staff.
 
 ## Production
 

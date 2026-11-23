@@ -2,7 +2,7 @@ import { Global, Inject, Module, type OnApplicationShutdown } from '@nestjs/comm
 import pg from 'pg';
 import { SandboxCollections, SandboxMessaging, type Collections, type Messaging } from '@project/adapters';
 import { ArrearsService, CollectionsService, LendingService } from '@project/finance';
-import { IdentityService } from '@project/identity';
+import { IdentityService, StaffAdminService } from '@project/identity';
 import { APP_CONFIG, type AppConfig } from './config.js';
 import { createPool } from './db.js';
 
@@ -46,11 +46,12 @@ export class InfraModule implements OnApplicationShutdown {
             fieldKey: config.AUTH_FIELD_KEY,
           }),
         },
+        { provide: StaffAdminService, useValue: new StaffAdminService(pool) },
         { provide: CollectionsService, useValue: new CollectionsService(pool, collections) },
         { provide: LendingService, useValue: lending },
         { provide: ArrearsService, useValue: new ArrearsService(pool, lending, messaging) },
       ],
-      exports: [APP_CONFIG, PG_POOL, MESSAGING, COLLECTIONS, IdentityService, CollectionsService, LendingService, ArrearsService],
+      exports: [APP_CONFIG, PG_POOL, MESSAGING, COLLECTIONS, IdentityService, StaffAdminService, CollectionsService, LendingService, ArrearsService],
     };
   }
 

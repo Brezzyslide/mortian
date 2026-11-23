@@ -49,27 +49,20 @@ export class ArrearsAdminController {
   async list(@Query('status') status?: string) {
     const allowed = ['in_arrears', 'repossession_review', 'repossessed'];
     if (status && !allowed.includes(status)) throw new BadRequestException(`status must be one of ${allowed.join(', ')}`);
-    const { rows } = await this.pool.query<{ id: string; reference: string; status: string; phone: string | null }>(
-      `SELECT f.id, f.reference, f.status, p.phone FROM finance_account f JOIN person p ON p.id = f.person_id
-        WHERE f.status = ANY($1)`,
-      [status ? [status] : allowed],
-    );
-    const items = [];
-    for (const r of rows) {
-      const s = await this.lending.statement(r.id);
-      items.push({
+    const rows = await this.arrears.summary(undefined, status ? [status] : allowed);
+    const items = rows
+      .map((r) => ({
         reference: r.reference,
         status: r.status,
         phone: r.phone,
-        daysOverdue: s.missed.daysOverdue,
-        missedInstalments: s.missed.instalments,
-        missedAmount: s.missed.amount,
-        reactivationAmount: s.arrears?.reactivationAmount ?? 0n,
-        cureDeadline: s.arrears?.cureDeadline ?? null,
-        cureDeadlinePassed: s.arrears?.cureDeadlinePassed ?? false,
-      });
-    }
-    items.sort((a, b) => b.daysOverdue - a.daysOverdue);
+        daysOverdue: r.daysOverdue,
+        missedInstalments: r.missedInstalments,
+        missedAmount: r.missedAmount,
+        reactivationAmount: r.reactivationAmount,
+        cureDeadline: r.cureDeadline,
+        cureDeadlinePassed: r.cureDeadlinePassed,
+      }))
+      .sort((a, b) => b.daysOverdue - a.daysOverdue);
     return { items };
   }
 

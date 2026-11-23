@@ -43,13 +43,24 @@ const AUTH_HTTP: Record<AuthError['code'], [HttpStatus, string]> = {
   mfa_expired: [HttpStatus.UNAUTHORIZED, 'mfa_expired'],
   session_invalid: [HttpStatus.UNAUTHORIZED, 'session_invalid'],
   session_reused: [HttpStatus.UNAUTHORIZED, 'session_invalid'],
+  setup_invalid: [HttpStatus.BAD_REQUEST, 'setup_invalid'],
+  last_super_admin: [HttpStatus.CONFLICT, 'last_super_admin'],
+  self_action: [HttpStatus.CONFLICT, 'self_action'],
+  not_staff: [HttpStatus.BAD_REQUEST, 'not_staff'],
+  email_taken: [HttpStatus.CONFLICT, 'email_taken'],
 };
 
 @Catch(AuthError)
 export class AuthErrorFilter implements ExceptionFilter {
   catch(err: AuthError, host: ArgumentsHost): void {
     const [status, error] = AUTH_HTTP[err.code];
-    host.switchToHttp().getResponse<Response>().status(status).json({ error });
+    // Messages are safe to show only where they carry no account-existence signal.
+    const showMessage = ['weak_password', 'last_super_admin', 'self_action', 'not_staff'].includes(err.code);
+    host
+      .switchToHttp()
+      .getResponse<Response>()
+      .status(status)
+      .json(showMessage && err.message !== err.code ? { error, message: err.message } : { error });
   }
 }
 

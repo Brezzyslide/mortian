@@ -1,6 +1,7 @@
 import { Module, type DynamicModule } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { AdminController } from './admin/admin.controller.js';
+import { StaffController, StaffSelfController } from './admin/staff.controller.js';
 import { AuthController } from './auth/auth.controller.js';
 import { AuthGuard } from './auth/auth.guard.js';
 import { BigIntInterceptor } from './bigint.interceptor.js';
@@ -28,6 +29,8 @@ export class AppModule {
         HealthController,
         AuthController,
         AdminController,
+        StaffController,
+        StaffSelfController,
         WebhooksController,
         PaymentsAdminController,
         LendingAdminController,

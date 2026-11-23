@@ -10,6 +10,9 @@ import { Audit } from './pages/Audit';
 import { Dashboard } from './pages/Dashboard';
 import { Exceptions } from './pages/Exceptions';
 import { Login } from './pages/Login';
+import { Password } from './pages/Password';
+import { Setup } from './pages/Setup';
+import { Staff } from './pages/Staff';
 import { Products } from './pages/Products';
 import { Tiers } from './pages/Tiers';
 
@@ -30,6 +33,7 @@ export const NAV: NavItem[] = [
   { to: '/tiers', label: 'Tiers', roles: ['underwriter', 'manager'], element: <Tiers /> },
   { to: '/products', label: 'Products', roles: ['manager'], element: <Products /> },
   { to: '/audit', label: 'Audit log', roles: ['manager'], element: <Audit /> },
+  { to: '/staff', label: 'Staff', roles: ['super_admin'], element: <Staff /> },
 ];
 
 function AccountSearch() {
@@ -63,6 +67,10 @@ function Shell() {
         </nav>
         <div className="me">
           <div className="muted">{claims?.roles.join(', ')}</div>
+          <NavLink to="/password" className="link">
+            Change password
+          </NavLink>{' '}
+          ·{' '}
           <button className="link" onClick={() => void signOut()}>
             Sign out
           </button>
@@ -77,6 +85,7 @@ function Shell() {
             <Route key={n.to} path={n.to} element={n.element} />
           ))}
           {can('underwriter', 'collections', 'finance', 'manager') && <Route path="/accounts/:reference" element={<Account />} />}
+          <Route path="/password" element={<Password />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
@@ -86,6 +95,8 @@ function Shell() {
 
 function Gate() {
   const { ready, claims } = useAuth();
+  // Setup links work without a session (and whether or not one exists in this tab).
+  if (window.location.pathname.replace(/\/$/, '') === '/console/setup') return <Setup />;
   if (!ready) return <p className="muted pad">Loading…</p>;
   if (!claims) return <Login />;
   if (claims.kind !== 'staff' || !claims.mfa) return <p className="pad">This console is for staff accounts only.</p>;
