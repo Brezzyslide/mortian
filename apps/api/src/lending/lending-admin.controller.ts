@@ -51,7 +51,6 @@ const WaiverBody = z.object({ reason: z.string().min(5).max(500) });
 const DecideBody = z.object({ decision: z.enum(['approved', 'rejected']), note: z.string().min(2).max(500) });
 const TierBody = z.object({ config: z.unknown(), note: z.string().max(500).optional() });
 const LiveBody = z.object({ live: z.boolean() });
-const DueBody = z.object({ asOf: z.iso.date().optional() });
 
 /** Maps domain errors to HTTP so the console can show a precise reason. */
 function http(err: unknown): never {
@@ -228,16 +227,5 @@ export class LendingAdminController {
   async decide(@Param('id') id: string, @Body() body: unknown, @Auth() auth: AccessClaims) {
     const b = parseBody(DecideBody, body);
     return this.lending.decideApproval(id, auth.sub, b.decision, b.note).catch(http);
-  }
-
-  // ----- jobs -----
-
-  /** Run by the scheduler daily; callable by a super_admin to catch up a date. Safe to repeat. */
-  @StaffRoles('super_admin')
-  @Post('jobs/due-date')
-  @HttpCode(200)
-  async dueDate(@Body() body: unknown) {
-    const { asOf } = parseBody(DueBody, body);
-    return this.lending.runDueDate(asOf);
   }
 }

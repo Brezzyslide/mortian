@@ -8,6 +8,7 @@ import type { AppConfig } from './config.js';
 import { HealthController } from './health/health.controller.js';
 import { AuthErrorFilter } from './http.js';
 import { InfraModule, type InfraOverrides } from './infra.module.js';
+import { ArrearsAdminController } from './lending/arrears-admin.controller.js';
 import { LendingAdminController } from './lending/lending-admin.controller.js';
 import { MeAccountsController } from './lending/me-accounts.controller.js';
 import { PaymentsAdminController } from './payments/payments-admin.controller.js';
@@ -30,6 +31,7 @@ export class AppModule {
         WebhooksController,
         PaymentsAdminController,
         LendingAdminController,
+        ArrearsAdminController,
         MeAccountsController,
       ],
       providers: [

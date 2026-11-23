@@ -6,4 +6,5 @@
 - **Authentication and roles:** [auth.md](auth.md)
 - **Collections and payment exceptions:** [payments.md](payments.md)
 - **Terms, schedules and the waterfall:** [lending.md](lending.md)
+- **Arrears, repossession and reactivation:** [arrears.md](arrears.md)
 - **Deployment setup:** [deploy.md](deploy.md)

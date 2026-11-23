@@ -4,7 +4,7 @@
 
 `applied` → **approve on a tier** → `approved` → *(Phase 2: contract signed → `contracted`)* → deposit in credit → **activate** → `active` → … → `settled`
 
-Penalty interest, days-overdue tracking, `in_arrears`, `repossession_review` and reactivation are the next branch.
+Arrears, penalty, repossession and reactivation: see [arrears.md](arrears.md).
 
 ## Tiers
 
@@ -66,4 +66,4 @@ Outstanding principal, interest, fees and penalty; credit; **missed instalments,
 | POST | `/admin/lending/fees/:feeChargeId/waiver-requests` `{ reason }` | collections, finance |
 | GET | `/admin/lending/approvals` | manager |
 | POST | `/admin/lending/approvals/:id/decide` `{ decision, note }` | manager (not the requester) |
-| POST | `/admin/lending/jobs/due-date` `{ asOf? }` | super_admin (scheduler in production) |
+| POST | `/admin/lending/jobs/daily` `{ asOf?, maxCatchUpDays? }` | super_admin (scheduler in production) |

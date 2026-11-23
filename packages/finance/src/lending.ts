@@ -2,8 +2,9 @@ import { kobo, type Kobo } from '@project/domain';
 import { recordAudit, type PoolLike, type Queryable } from '@project/identity';
 import { accountBalance, postEntryInTx, type EntryDraft, type LedgerLine } from '@project/ledger';
 import { allocate, DEFAULT_WATERFALL, type Bucket, type Due } from './allocation.js';
+import { reactivationAmountOf, reactivationSteps, type ArrearsStep } from './arrears.js';
 import { suspenseAccount, type FinanceProductCode } from './collections.js';
-import { daysBetween, depositOf, financedPrincipalOf, generateSchedule, lagosDate } from './schedule.js';
+import { addPeriods, daysBetween, depositOf, financedPrincipalOf, generateSchedule, lagosDate } from './schedule.js';
 import { resolveTerms, validateTierConfig, type NumericTerm, type TermSet, type TierConfig } from './terms.js';
 
 export const acct = {
@@ -17,6 +18,10 @@ export const acct = {
   feeIncome: 'fin:income:fees',
   feeWaivers: 'fin:expense:fee_waivers',
 };
+
+export type ApprovalKind = 'terms_out_of_bounds' | 'fee_waiver' | 'repossession' | 'release' | 'close_recovered';
+
+class DryRun extends Error {}
 
 export class LendingError extends Error {
   constructor(
@@ -63,6 +68,19 @@ export interface Statement {
     paid: Kobo;
     state: 'paid' | 'part_paid' | 'missed' | 'due' | 'upcoming';
   }[];
+  /** Present whenever anything is overdue or the account is in review, repossessed or closed. */
+  readonly arrears: {
+    readonly reactivationAmount: Kobo;
+    readonly penaltyOutstanding: Kobo;
+    readonly feesOutstanding: Kobo;
+    readonly arrearsSince: string | null;
+    readonly reviewStartsOn: string | null;
+    readonly reviewStartedOn: string | null;
+    readonly cureDeadline: string | null;
+    readonly cureDeadlinePassed: boolean;
+    readonly repossessedOn: string | null;
+    readonly steps: readonly ArrearsStep[];
+  } | null;
 }
 
 export class LendingService {
@@ -484,7 +502,7 @@ export class LendingService {
 
   /** Proposes an action that needs a second person. One pending request per kind per account. */
   async requestApproval(input: {
-    kind: 'terms_out_of_bounds' | 'fee_waiver';
+    kind: ApprovalKind;
     financeAccountId: string;
     payload: Record<string, unknown>;
     reason: string;
@@ -513,7 +531,7 @@ export class LendingService {
   async decideApproval(requestId: string, deciderId: string, decision: 'approved' | 'rejected', note: string) {
     return inTx(this.pool, async (tx) => {
       const { rows } = await tx.query<{
-        kind: 'terms_out_of_bounds' | 'fee_waiver';
+        kind: ApprovalKind;
         finance_account_id: string;
         payload: Record<string, unknown>;
         reason: string;
@@ -541,9 +559,11 @@ export class LendingService {
             underwriterId: r.requested_by,
             secondApprover: { personId: deciderId, reason: `${r.reason} | approved: ${note}` },
           });
-        } else {
+        } else if (r.kind === 'fee_waiver') {
           const p = r.payload as { feeChargeId: string };
           result = { waived: (await this.waiveFeeTx(tx, p.feeChargeId, r.requested_by, deciderId, r.reason)).toString() };
+        } else {
+          result = await this.recoveryActionTx(tx, r.kind, r.finance_account_id, r.payload, deciderId);
         }
       }
       await tx.query(
@@ -560,6 +580,97 @@ export class LendingService {
       });
       return { status: decision, result };
     });
+  }
+
+  /** Checks a recovery action is possible now, so a request is refused early rather than at approval. */
+  async assertRecoveryAllowed(kind: 'repossession' | 'release' | 'close_recovered', financeAccountId: string): Promise<void> {
+    await inTx(this.pool, async (tx) => {
+      await this.recoveryActionTx(tx, kind, financeAccountId, {}, null);
+      throw new DryRun();
+    }).catch((err) => {
+      if (!(err instanceof DryRun)) throw err;
+    });
+  }
+
+  /**
+   * Repossession, release and closure. Only reachable through decideApproval (two people);
+   * decider null means a dry run used to validate a request before it is filed.
+   */
+  private async recoveryActionTx(
+    tx: Queryable,
+    kind: 'repossession' | 'release' | 'close_recovered',
+    financeAccountId: string,
+    payload: Record<string, unknown>,
+    deciderId: string | null,
+  ) {
+    const row = (
+      await tx.query<AccountRow & { cure_deadline: string | null }>(
+        `SELECT id, reference, status, product_code, current_snapshot_id, to_char(cure_deadline, 'YYYY-MM-DD') AS cure_deadline
+           FROM finance_account WHERE id = $1 FOR UPDATE`,
+        [financeAccountId],
+      )
+    ).rows[0];
+    if (!row || !row.current_snapshot_id) throw new LendingError('not_found');
+    const today = this.today();
+
+    if (kind === 'repossession') {
+      if (row.status !== 'repossession_review') {
+        throw new LendingError('invalid_status', `Repossession needs repossession_review; account is ${row.status}`);
+      }
+      if (deciderId === null) return null;
+      await tx.query(`UPDATE finance_account SET status = 'repossessed', repossessed_on = $2 WHERE id = $1`, [row.id, today]);
+      await recordAudit(tx, {
+        actorId: deciderId,
+        actorKind: 'person',
+        action: 'arrears.repossessed',
+        subjectType: 'finance_account',
+        subjectId: row.reference,
+        details: payload,
+      });
+      return { status: 'repossessed', repossessedOn: today };
+    }
+
+    if (kind === 'release') {
+      if (row.status !== 'repossessed') throw new LendingError('invalid_status', `Release needs repossessed; account is ${row.status}`);
+      const r = await reactivationAmountOf(tx, { ...row, current_snapshot_id: row.current_snapshot_id }, today);
+      if (r.total > 0n) {
+        throw new LendingError('invalid_status', `Reactivation amount not cleared: ${r.total} kobo still owed`);
+      }
+      if (deciderId === null) return null;
+      await tx.query(
+        `UPDATE finance_account SET status = 'active', arrears_since = NULL, review_started_on = NULL,
+                cure_deadline = NULL, repossessed_on = NULL WHERE id = $1`,
+        [row.id],
+      );
+      await recordAudit(tx, {
+        actorId: deciderId,
+        actorKind: 'person',
+        action: 'arrears.reactivated',
+        subjectType: 'finance_account',
+        subjectId: row.reference,
+        details: payload,
+      });
+      return { status: 'active' };
+    }
+
+    // close_recovered
+    if (!['repossession_review', 'repossessed'].includes(row.status)) {
+      throw new LendingError('invalid_status', `Closing needs review or repossessed; account is ${row.status}`);
+    }
+    if (!row.cure_deadline || row.cure_deadline >= today) {
+      throw new LendingError('invalid_status', `Cure deadline ${row.cure_deadline ?? 'not set'} has not passed`);
+    }
+    if (deciderId === null) return null;
+    await tx.query(`UPDATE finance_account SET status = 'closed_recovered', closed_on = $2 WHERE id = $1`, [row.id, today]);
+    await recordAudit(tx, {
+      actorId: deciderId,
+      actorKind: 'person',
+      action: 'arrears.closed_recovered',
+      subjectType: 'finance_account',
+      subjectId: row.reference,
+      details: payload,
+    });
+    return { status: 'closed_recovered', closedOn: today };
   }
 
   async pendingApprovals() {
@@ -587,8 +698,18 @@ export class LendingService {
 
   async statement(financeAccountId: string, asOf: string = this.today()): Promise<Statement> {
     const db = this.pool;
-    const fa = (await db.query<AccountRow>(
-      'SELECT id, reference, status, product_code, current_snapshot_id FROM finance_account WHERE id = $1',
+    const fa = (await db.query<AccountRow & {
+      arrears_since: string | null;
+      review_started_on: string | null;
+      cure_deadline: string | null;
+      repossessed_on: string | null;
+    }>(
+      `SELECT id, reference, status, product_code, current_snapshot_id,
+              to_char(arrears_since, 'YYYY-MM-DD') AS arrears_since,
+              to_char(review_started_on, 'YYYY-MM-DD') AS review_started_on,
+              to_char(cure_deadline, 'YYYY-MM-DD') AS cure_deadline,
+              to_char(repossessed_on, 'YYYY-MM-DD') AS repossessed_on
+         FROM finance_account WHERE id = $1`,
       [financeAccountId],
     )).rows[0];
     if (!fa) throw new LendingError('not_found');
@@ -674,6 +795,51 @@ export class LendingService {
       next: next ? { dueDate: next.dueDate, amount: kobo(next.owed) } : null,
       paidOffPercent: totalPrincipal === 0n ? 0 : Number((BigInt(principalPaid) * 10_000n) / totalPrincipal) / 100,
       schedule: schedule.map(({ owed: _owed, ...s }) => s),
+      arrears: await this.arrearsBlock(fa, asOf, missed.length),
+    };
+  }
+
+  private async arrearsBlock(
+    fa: AccountRow & {
+      arrears_since: string | null;
+      review_started_on: string | null;
+      cure_deadline: string | null;
+      repossessed_on: string | null;
+    },
+    asOf: string,
+    missedCount: number,
+  ): Promise<Statement['arrears']> {
+    const inScope = ['in_arrears', 'repossession_review', 'repossessed', 'closed_recovered'].includes(fa.status);
+    if (!fa.current_snapshot_id || (!inScope && missedCount === 0)) return null;
+    const r = await reactivationAmountOf(this.pool, { ...fa, current_snapshot_id: fa.current_snapshot_id }, asOf);
+    const terms = await snapshotTerms(this.pool, fa.current_snapshot_id);
+    const reviewStartsOn =
+      r.missed.oldestDueDate && !fa.review_started_on
+        ? addPeriods(r.missed.oldestDueDate, 'daily', terms.repossessionReviewDaysOverdue)
+        : null;
+    const va = (
+      await this.pool.query<{ account_number: string; bank_name: string }>(
+        'SELECT account_number, bank_name FROM virtual_account WHERE finance_account_id = $1',
+        [fa.id],
+      )
+    ).rows[0];
+    return {
+      reactivationAmount: kobo(r.total),
+      penaltyOutstanding: kobo(r.penalty),
+      feesOutstanding: kobo(r.fees),
+      arrearsSince: fa.arrears_since,
+      reviewStartsOn,
+      reviewStartedOn: fa.review_started_on,
+      cureDeadline: fa.cure_deadline,
+      cureDeadlinePassed: fa.cure_deadline !== null && fa.cure_deadline < asOf,
+      repossessedOn: fa.repossessed_on,
+      steps: reactivationSteps({
+        status: fa.status === 'active' && missedCount > 0 ? 'in_arrears' : fa.status,
+        reactivationAmount: kobo(r.total),
+        cureDeadline: fa.cure_deadline,
+        reviewStartsOn,
+        repayment: va ? { accountNumber: va.account_number, bankName: va.bank_name } : null,
+      }),
     };
   }
 }
