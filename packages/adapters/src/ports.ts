@@ -56,14 +56,35 @@ export interface IncomingPayment {
   readonly providerReference: string;
   readonly virtualAccountNumber: string;
   readonly amount: Kobo;
-  readonly receivedAt: Date;
+  /** When the payer's money arrived, according to the provider. */
+  readonly paidAt: Date;
+  /** The provider's parsed body, stored as received. */
+  readonly raw: unknown;
+}
+
+export class InvalidWebhookSignatureError extends Error {
+  constructor() {
+    super('Webhook signature is missing or invalid');
+    this.name = 'InvalidWebhookSignatureError';
+  }
+}
+
+export class InvalidWebhookPayloadError extends Error {
+  constructor(detail: string) {
+    super(`Webhook payload rejected: ${detail}`);
+    this.name = 'InvalidWebhookPayloadError';
+  }
 }
 
 export interface Collections {
   readonly info: AdapterInfo;
   createVirtualAccount(financeAccountId: string, customerName: string): Promise<VirtualAccount>;
-  /** Verifies the provider signature and parses the body. Throws on an invalid signature. */
-  parseWebhook(rawBody: string, headers: Record<string, string>): IncomingPayment;
+  /**
+   * Verifies the provider signature over the exact raw bytes, then parses the body.
+   * Throws InvalidWebhookSignatureError or InvalidWebhookPayloadError.
+   * Returns null for event types that are not incoming payments (acknowledged, ignored).
+   */
+  parseWebhook(rawBody: Buffer, headers: Record<string, string | string[] | undefined>): IncomingPayment | null;
 }
 
 // ---------- Messaging ----------
@@ -72,4 +93,17 @@ export type Channel = 'sms' | 'whatsapp' | 'email' | 'push';
 export interface Messaging {
   readonly info: AdapterInfo;
   send(channel: Channel, to: string, templateId: string, vars: Record<string, string>): Promise<{ id: string }>;
+}
+
+// ---------- Document archive ----------
+export interface StoredDocument {
+  readonly key: string;
+  readonly sha256: string;
+}
+
+export interface DocumentStore {
+  readonly info: AdapterInfo;
+  /** Writes once. Implementations must refuse to overwrite an existing key. */
+  put(key: string, body: Buffer, contentType: string): Promise<StoredDocument>;
+  get(key: string): Promise<Buffer>;
 }

@@ -1,0 +1,69 @@
+name: Deploy
+
+# Staging deploys automatically after CI passes on main.
+# Production deploys only when started by hand, and the "production" environment's required reviewers approve.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Environment
+        type: choice
+        options: [staging, production]
+        default: staging
+
+permissions:
+  id-token: write # GitHub OIDC -> AWS role; no stored AWS keys
+  contents: read
+
+concurrency:
+  group: deploy-${{ inputs.target || 'staging' }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # Skipped until the one-time setup in docs/deploy.md sets AWS_DEPLOY_ROLE_ARN.
+    if: >-
+      vars.AWS_DEPLOY_ROLE_ARN != '' &&
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target || 'staging' }}
+    env:
+      TARGET: ${{ inputs.target || 'staging' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'af-south-1' }}
+      - name: Deploy
+        working-directory: infra
+        run: |
+          if [ "$TARGET" = "production" ]; then
+            test -n "${{ vars.PROD_DOMAIN }}" && test -n "${{ vars.PROD_CERTIFICATE_ARN }}" \
+              || { echo "PROD_DOMAIN and PROD_CERTIFICATE_ARN must be set before production can deploy"; exit 1; }
+            STACKS='project-name-prod-*'
+            EXTRA="-c prodDomain=${{ vars.PROD_DOMAIN }} -c prodCertificateArn=${{ vars.PROD_CERTIFICATE_ARN }}"
+          else
+            STACKS='project-name-staging-*'
+            EXTRA=""
+            if [ -n "${{ vars.STAGING_PUBLIC_BASE_URL }}" ]; then EXTRA="-c stagingPublicBaseUrl=${{ vars.STAGING_PUBLIC_BASE_URL }}"; fi
+          fi
+          ALERT=""
+          if [ -n "${{ vars.ALERT_EMAIL }}" ]; then ALERT="-c alertEmail=${{ vars.ALERT_EMAIL }}"; fi
+          npx cdk deploy "$STACKS" --require-approval never --concurrency 3 $EXTRA $ALERT --outputs-file cdk-outputs.json
+      - name: Show URLs
+        working-directory: infra
+        run: node -e "const o=require('./cdk-outputs.json');for(const[s,v]of Object.entries(o))for(const[k,x]of Object.entries(v))if(/Url|Domain/.test(k))console.log(s,k,x)"

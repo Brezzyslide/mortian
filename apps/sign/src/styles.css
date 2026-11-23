@@ -1,0 +1,26 @@
+:root { font-family: system-ui, -apple-system, Roboto, sans-serif; font-size: 16px; color: #16191d; background: #f6f7f9; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { max-width: 640px; margin: 0 auto; padding: 16px 16px 48px; display: flex; flex-direction: column; gap: 14px; }
+header { padding: 4px 0 8px; border-bottom: 1px solid #e2e5ea; }
+h1 { font-size: 20px; margin: 8px 0; }
+section, form { display: flex; flex-direction: column; gap: 12px; }
+.muted { color: #5d6673; }
+.small { font-size: 12px; }
+.doc { white-space: pre-wrap; background: #fff; border: 1px solid #d6dbe1; border-radius: 8px; padding: 14px; max-height: 55vh; overflow-y: auto; font-size: 15px; line-height: 1.5; }
+button { font: inherit; padding: 14px 16px; border-radius: 10px; border: none; background: #1f4e79; color: #fff; font-weight: 600; min-height: 48px; }
+button:disabled { opacity: 0.45; }
+button.link { background: none; color: #1f4e79; font-weight: 500; padding: 8px 0; min-height: 0; text-align: left; }
+button.danger { background: #b42318; }
+label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: #5d6673; }
+input, textarea { font: inherit; padding: 12px; border: 1px solid #c8ced6; border-radius: 8px; color: #16191d; background: #fff; }
+input[inputmode='numeric'] { font-size: 24px; letter-spacing: 6px; text-align: center; }
+.terms { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.check { flex-direction: row; align-items: flex-start; gap: 10px; color: #16191d; background: #fff; border: 1px solid #e2e5ea; border-radius: 8px; padding: 12px; }
+.check input { width: 22px; height: 22px; margin: 0; flex: none; }
+.pad { display: flex; flex-direction: column; gap: 4px; }
+.pad canvas { width: 100%; height: 150px; background: #fff; border: 1px dashed #9aa3ae; border-radius: 8px; touch-action: none; }
+.ok { background: #e3f4ea; color: #1f7a46; padding: 12px; border-radius: 8px; }
+.error { background: #fde7e5; color: #b42318; padding: 12px; border-radius: 8px; }
+.warn { background: #fdf1dc; color: #6b4500; padding: 12px; border-radius: 8px; font-weight: 600; }
+footer { margin-top: 24px; font-size: 13px; }
