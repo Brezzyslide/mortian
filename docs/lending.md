@@ -36,7 +36,7 @@ Arrears, penalty, repossession and reactivation: see [arrears.md](arrears.md).
 
 ## Waterfall
 
-Default order: **fees → penalty → overdue interest → overdue principal → current interest → current principal**, oldest first within each. Only amounts already due are paid. Anything left stays as credit and is applied when the next instalment falls due (`POST /admin/lending/jobs/due-date`, daily).
+Default order: **fees → penalty → overdue interest → overdue principal → current interest → current principal**, oldest first within each. Only amounts already due are paid. Anything left stays as credit and is applied when the next instalment falls due (`POST /admin/lending/jobs/daily`).
 
 Payments are applied immediately after the webhook posts. If that fails, the money stays in credit and the daily job applies it.
 
