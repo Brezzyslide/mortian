@@ -8,11 +8,12 @@ Served at `/console/` on the same address as the API, so it calls `/v1` same-ori
 | --- | --- | --- |
 | Overview | all staff | Applications waiting (underwriters), approvals waiting (managers), portfolio by days overdue and PAR30 (finance, managers) |
 | Applications | underwriter, manager | Underwriting queue by status |
-| Account (search `FA-…`) | underwriter, collections, finance, manager | Statement, arrears and what the borrower is told, schedule, fees. Actions by role: approve on a tier, activate, charge fee, request waiver, request repossession / release / closure |
+| Account (search `FA-…`) | underwriter, collections, finance, manager | Statement, arrears and what the borrower is told, schedule, fees, guarantors, contract progress. Actions by role: approve on a tier; add/remove guarantors and issue the contract (underwriter); resend a link; countersign and revoke (manager); download the signed PDF, text and certificate; activate once signed; charge fee, request waiver, request repossession / release / closure |
 | Approvals | manager | Two-person decisions. Your own requests are shown but cannot be decided by you |
 | Arrears | collections, manager | Worklist, most overdue first, with call links |
 | Payment exceptions | finance | Move unmatched payments to an account, mark reviewed; sandbox payment simulator |
 | Tiers | underwriter (view), manager (publish) | Current version per tier; publish a new version; super admin can load the labelled placeholders |
+| Contract templates | underwriter (view), manager (write, approve) | Versions per product. A manager other than the author approves with a legal review note; approved wording is frozen. Super admin can load the labelled placeholder |
 | Products | manager (view), super admin (switch) | Live switches |
 | Audit log | manager | Append-only event log, filter by subject |
 | Staff | super_admin | Invite, change roles, suspend, reset access, re-issue setup links |

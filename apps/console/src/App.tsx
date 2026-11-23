@@ -14,6 +14,7 @@ import { Password } from './pages/Password';
 import { Setup } from './pages/Setup';
 import { Staff } from './pages/Staff';
 import { Products } from './pages/Products';
+import { Templates } from './pages/Templates';
 import { Tiers } from './pages/Tiers';
 
 interface NavItem {
@@ -31,6 +32,7 @@ export const NAV: NavItem[] = [
   { to: '/arrears', label: 'Arrears', roles: ['collections', 'manager'], element: <Arrears /> },
   { to: '/exceptions', label: 'Payment exceptions', roles: ['finance'], element: <Exceptions /> },
   { to: '/tiers', label: 'Tiers', roles: ['underwriter', 'manager'], element: <Tiers /> },
+  { to: '/templates', label: 'Contract templates', roles: ['underwriter', 'manager'], element: <Templates /> },
   { to: '/products', label: 'Products', roles: ['manager'], element: <Products /> },
   { to: '/audit', label: 'Audit log', roles: ['manager'], element: <Audit /> },
   { to: '/staff', label: 'Staff', roles: ['super_admin'], element: <Staff /> },

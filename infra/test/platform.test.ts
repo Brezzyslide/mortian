@@ -40,7 +40,10 @@ function build(settings: StageSettings, domain?: { name: string; certificateArn:
     crossRegionReferences: true,
     alb: api.alb,
     webAclArn: waf.webAclArn,
-    consoleDistPath: consoleDist,
+    webApps: [
+      { prefix: 'console', distPath: consoleDist },
+      { prefix: 'sign', distPath: consoleDist },
+    ],
     ...(domain ? { domain } : {}),
   });
   return {
@@ -180,7 +183,10 @@ describe('edge', () => {
     staging.edge.resourceCountIs('AWS::CloudFront::OriginAccessControl', 1);
     staging.edge.hasResourceProperties('AWS::CloudFront::Distribution', {
       DistributionConfig: Match.objectLike({
-        CacheBehaviors: Match.arrayWith([Match.objectLike({ PathPattern: '/console*', ViewerProtocolPolicy: 'redirect-to-https' })]),
+        CacheBehaviors: Match.arrayWith([
+          Match.objectLike({ PathPattern: '/console*', ViewerProtocolPolicy: 'redirect-to-https' }),
+          Match.objectLike({ PathPattern: '/sign*', ViewerProtocolPolicy: 'redirect-to-https' }),
+        ]),
       }),
     });
     staging.edge.hasResourceProperties('AWS::CloudFront::ResponseHeadersPolicy', {
@@ -216,11 +222,15 @@ describe('console SPA rewrite function', () => {
     ['/console/approvals', '/console/index.html'],
     ['/console/assets/index-abc.js', '/console/assets/index-abc.js'],
     ['/console/assets/index-abc.css', '/console/assets/index-abc.css'],
+    ['/sign/', '/sign/index.html'],
+    ['/sign/assets/index-abc.js', '/sign/assets/index-abc.js'],
+    ['/v1/health', '/v1/health'],
   ])('%s -> %s', (uri, expected) => {
     expect(run(uri).uri).toBe(expected);
   });
 
-  it('redirects /console to /console/', () => {
+  it('redirects /console and /sign to their trailing-slash form', () => {
     expect(run('/console').statusCode).toBe(301);
+    expect(run('/sign').statusCode).toBe(301);
   });
 });

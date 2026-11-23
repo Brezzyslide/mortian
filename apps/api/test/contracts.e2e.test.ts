@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import 'reflect-metadata';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomBytes } from 'node:crypto';
@@ -117,6 +118,22 @@ describe('contract signing over HTTP, application to handover', () => {
     expect(list.body.contracts[0].flags).toEqual(expect.arrayContaining(['flag_same_device_as_borrower', 'flag_same_network_as_borrower']));
     const doc = await http.get(`/v1/admin/contracts/${contractId}/archive/agreement`).set(as('mgr')).expect(200);
     expect(doc.text).toContain('HIRE PURCHASE AGREEMENT');
+    const pdf = await http
+      .get(`/v1/admin/contracts/${contractId}/archive/pdf`)
+      .set(as('mgr'))
+      .buffer(true)
+      .parse((res, cb) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c: Buffer) => chunks.push(c));
+        res.on('end', () => cb(null, Buffer.concat(chunks)));
+      })
+      .expect(200);
+    expect(pdf.headers['content-type']).toBe('application/pdf');
+    expect(pdf.headers['cache-control']).toBe('no-store');
+    expect((pdf.body as Buffer).subarray(0, 5).toString()).toBe('%PDF-');
+    expect(createHash('sha256').update(pdf.body as Buffer).digest('hex')).toBe(list.body.contracts[0].pdfSha256);
+    await http.get(`/v1/admin/contracts/${contractId}/archive/other`).set(as('mgr')).expect(404);
+    await http.get(`/v1/admin/contracts/${contractId}/archive/pdf`).expect(401);
   });
 
   it('a used link is gone, and handover now succeeds', async () => {

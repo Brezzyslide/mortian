@@ -1,3 +1,4 @@
+import { renderAgreementPdf } from './pdf.js';
 import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import type { DocumentStore, Messaging } from '@project/adapters';
 import { brand, formatNaira, kobo } from '@project/domain';
@@ -480,8 +481,8 @@ export class ContractsService {
   ) {
     const now = this.clock();
     const sessions = (
-      await tx.query<{ signer_order: number; signer_role: string; signer_name: string; phone: string | null; signed_at: Date; evidence: Record<string, unknown> }>(
-        `SELECT signer_order, signer_role, signer_name, phone, signed_at, evidence FROM signing_session WHERE contract_id = $1 ORDER BY signer_order`,
+      await tx.query<{ signer_order: number; signer_role: string; signer_name: string; phone: string | null; signed_at: Date; evidence: Record<string, unknown>; signature_image: Buffer | null }>(
+        `SELECT signer_order, signer_role, signer_name, phone, signed_at, evidence, signature_image FROM signing_session WHERE contract_id = $1 ORDER BY signer_order`,
         [contractId],
       )
     ).rows;
@@ -491,6 +492,32 @@ export class ContractsService {
         [contractId],
       )
     ).rows;
+    const isPlaceholder = (
+      await tx.query<{ is_placeholder: boolean }>('SELECT is_placeholder FROM contract WHERE id = $1', [contractId])
+    ).rows[0]!.is_placeholder;
+    const base = `contracts/${reference}/${contractId}`;
+    const stamp = now.toISOString().replace(/[:.]/g, '-');
+    const pdfBytes = Buffer.from(
+      await renderAgreementPdf({
+        contractId,
+        reference,
+        documentSha256,
+        text,
+        executedAt: now,
+        isPlaceholder,
+        signers: sessions.map((s) => ({
+          order: s.signer_order,
+          role: s.signer_role,
+          name: s.signer_name,
+          phone: s.phone ? maskPhone(s.phone) : null,
+          signedAt: s.signed_at,
+          typedName: String(s.evidence['typedName'] ?? s.evidence['signedAs'] ?? ''),
+          signaturePng: s.signature_image,
+        })),
+      }),
+    );
+    const pdfDoc = await this.archive(`${base}/agreement-${stamp}.pdf`, pdfBytes, 'application/pdf');
+
     const certificate = {
       kind: 'execution_certificate',
       note: 'SHA-256 values are tamper evidence: they show the document has not changed since signing. They are not a qualified digital signature.',
@@ -498,6 +525,7 @@ export class ContractsService {
       reference,
       documentSha256,
       executedAt: now.toISOString(),
+      pdf: { key: pdfDoc.key, sha256: pdfDoc.sha256, note: 'A readable copy of the agreement text above, with the signature page. The text file is the signed original.' },
       signers: sessions.map((s) => ({
         order: s.signer_order,
         role: s.signer_role,
@@ -509,22 +537,22 @@ export class ContractsService {
       events: events.map((e) => ({ at: e.at.toISOString(), event: e.event, details: e.details })),
     };
     const certBody = Buffer.from(JSON.stringify(certificate, null, 2));
-    const base = `contracts/${reference}/${contractId}`;
     const doc = await this.archive(`${base}/agreement.txt`, Buffer.from(text), 'text/plain; charset=utf-8');
     if (doc.sha256 !== documentSha256) throw new Error('Archived document hash does not match the issued hash');
     // Timestamped key: if this transaction rolls back after archiving, a retry writes a new object
     // instead of colliding with the stray one; only the committed key is recorded.
-    const cert = await this.archive(`${base}/execution-certificate-${now.toISOString().replace(/[:.]/g, '-')}.json`, certBody, 'application/json');
+    const cert = await this.archive(`${base}/execution-certificate-${stamp}.json`, certBody, 'application/json');
 
     await tx.query(
-      `UPDATE contract SET status = 'fully_executed', executed_at = $2, archive_document_key = $3, archive_certificate_key = $4, certificate_sha256 = $5
+      `UPDATE contract SET status = 'fully_executed', executed_at = $2, archive_document_key = $3, archive_certificate_key = $4, certificate_sha256 = $5,
+              archive_pdf_key = $6, pdf_sha256 = $7
         WHERE id = $1`,
-      [contractId, now, doc.key, cert.key, cert.sha256],
+      [contractId, now, doc.key, cert.key, cert.sha256, pdfDoc.key, pdfDoc.sha256],
     );
     await this.ev(tx, contractId, null, 'executed', { certificateSha256: cert.sha256 });
     await tx.query(`UPDATE finance_account SET status = 'contracted' WHERE id = $1 AND status = 'approved'`, [financeAccountId]);
     await recordAudit(tx, { actorId: by, actorKind: 'person', action: 'contract.executed', subjectType: 'finance_account', subjectId: reference, details: { contractId, documentSha256, certificateSha256: cert.sha256 } });
-    return { contractId, documentSha256, certificateSha256: cert.sha256, documentKey: doc.key, certificateKey: cert.key };
+    return { contractId, documentSha256, certificateSha256: cert.sha256, documentKey: doc.key, certificateKey: cert.key, pdfKey: pdfDoc.key, pdfSha256: pdfDoc.sha256 };
   }
 
   /** Write-once archive. A retry after a crash finds the object already there and checks it matches. */
@@ -586,7 +614,8 @@ export class ContractsService {
         await this.pool.query(
           `SELECT id, status, document_sha256 AS "documentSha256", is_placeholder AS "isPlaceholder", issued_at AS "issuedAt",
                   executed_at AS "executedAt", certificate_sha256 AS "certificateSha256", closed_reason AS "closedReason",
-                  archive_document_key AS "documentKey", archive_certificate_key AS "certificateKey"
+                  archive_document_key AS "documentKey", archive_certificate_key AS "certificateKey",
+                  archive_pdf_key AS "pdfKey", pdf_sha256 AS "pdfSha256"
              FROM contract WHERE id = $1`,
           [r.id],
         )

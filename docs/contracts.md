@@ -10,7 +10,7 @@ An asset is handed over only after the contract is signed by the borrower, every
 4. **Borrower signs** on the signing page: reads the full text, gets an OTP on their phone, acknowledges each key term separately, confirms intention, types a name and/or draws a signature.
 5. **Guarantors sign**, each with their own link, sent only after the previous signer finishes. They see their maximum liability.
 6. **Manager countersigns** from the console (never the borrower themselves).
-7. **Execution.** The agreement text and an execution certificate (every signer's evidence and every event) are written once to the contracts archive (S3 Object Lock). The account becomes `contracted`.
+7. **Execution.** Three files are written once to the contracts archive (S3 Object Lock): the agreement text (the signed original, whose hash every signer saw), a PDF copy with a signature page, and an execution certificate (every signer's evidence, every event, and the PDF's hash). After execution the database refuses any change to these pointers and hashes. The account becomes `contracted`.
 
 ## Safeguards
 
@@ -43,15 +43,31 @@ IP, user agent, hashed device id, document hash shown, each acknowledged term wi
 | GET | `/admin/contracts/accounts/:ref` | staff: contracts, signer progress, flags |
 | POST | `/admin/contracts/:id/countersign` | manager |
 | POST | `/admin/contracts/:id/revoke` `{ reason }`, `/resend-link` | manager; underwriter or manager |
-| GET | `/admin/contracts/:id/archive/agreement` and `/certificate` | staff |
+| GET | `/admin/contracts/:id/archive/agreement`, `/pdf`, `/certificate` | staff |
 | POST | `/sign/view`, `/sign/otp`, `/sign/verify`, `/sign/complete`, `/sign/decline` | public, token in body |
 
 ## Placeholder template
 
 `PLACEHOLDER_MOTORCYCLE_TEMPLATE` exists only to run the flow end to end. **It has not been reviewed by a lawyer.** Every contract issued from it is marked `isPlaceholder`, and the text says so at the top. Replace it with counsel-approved wording (create a new version and have a second manager approve it) before any real agreement.
 
+## Signing page
+
+`apps/sign`, served at `/sign/`. Built for low-cost Android phones (about 75 KB gzipped).
+
+- The link token is read from the `#fragment` (never sent to servers in a URL, never in logs). It is kept for the tab only and removed from the address bar.
+- A random device id is kept on the phone and sent with the signature. The server stores its hash. A guarantor using the borrower's phone is refused with a plain explanation.
+- The signer must scroll to the end before continuing. They confirm the SMS code, tick every key term, confirm intention and type their name. Drawing a signature is optional.
+- Declining asks for a reason and cancels the agreement.
+- Placeholder agreements show a warning banner on every step.
+
+## The PDF
+
+Rendered with standard PDF fonts on A4: the full text, a page footer (reference, contract id, page *i* of *n*, the document hash), and a signature page. The signature page shows each signer's role, name, masked phone, signing time, typed name and drawn signature. Rendering is repeatable: the same input produces the same bytes.
+
+- The naira sign is written as `NGN`. Letters the standard fonts lack, such as Yoruba ọ ẹ ṣ, are folded to their base letter and keep their tone marks (Adébáyọ̀ → Adébáyò). The PDF says so. The text file holds the exact characters and is the original.
+- A damaged signature image never blocks execution. The PDF notes it, and the image's hash is in the certificate.
+
 ## Not yet built
 
-- The signing page itself (`apps/sign`): next.
-- PDF rendering of the executed agreement with signatures and per-page hash footer. Today the archive holds the exact signed text and a JSON certificate.
-- Console screens for templates, guarantors and countersigning. The API exists.
+- Sending the borrower a copy of the executed PDF (SMS link or WhatsApp) once a messaging provider is chosen.
+- A Unicode font in the PDF so that Yoruba and Igbo letters print exactly (needs a licensed font file added to the repo).

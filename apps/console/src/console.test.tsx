@@ -101,7 +101,7 @@ describe('staff sign-in and navigation', () => {
 
     const nav = await screen.findByRole('navigation');
     const links = within(nav).getAllByRole('link').map((a) => a.textContent);
-    expect(links).toEqual(['Overview', 'Applications', 'Approvals', 'Arrears', 'Tiers', 'Products', 'Audit log']);
+    expect(links).toEqual(['Overview', 'Applications', 'Approvals', 'Arrears', 'Tiers', 'Contract templates', 'Products', 'Audit log']);
     expect(links).not.toContain('Payment exceptions'); // finance only
     expect(sessionStorage.getItem('console.refresh')).toBe('r');
   });
@@ -220,5 +220,90 @@ describe('staff screen', () => {
     render(<App />);
     const nav = await screen.findByRole('navigation');
     expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toContain('Staff');
+  });
+});
+
+describe('contract screens', () => {
+  const signedIn = (roles: string[], sub = 'mgr') => (url: string) =>
+    url === '/v1/auth/refresh'
+      ? { status: 200, body: { accessToken: jwt({ sub, kind: 'staff', mfa: true, roles }), refreshToken: 'r2' } }
+      : undefined;
+
+  const contract = (over: Record<string, unknown> = {}) => ({
+    id: 'c-1',
+    status: 'partially_signed',
+    documentSha256: 'b'.repeat(64),
+    isPlaceholder: true,
+    issuedAt: '2026-11-20T10:00:00Z',
+    executedAt: null,
+    certificateSha256: null,
+    closedReason: null,
+    documentKey: null,
+    signers: [
+      { order: 1, role: 'borrower', name: 'Bola Rider', phone: '+234 806 *** 0001', status: 'signed', signedAt: '2026-11-20T11:00:00Z' },
+      { order: 2, role: 'guarantor', name: 'Gbenga G', phone: '+234 803 *** 0002', status: 'signed', signedAt: '2026-11-20T12:00:00Z' },
+      { order: 3, role: 'company', name: 'Company', phone: null, status: 'open', signedAt: null },
+    ],
+    flags: ['flag_same_network_as_borrower'],
+    ...over,
+  });
+
+  async function renderAccount(roles: string[], c: ReturnType<typeof contract>) {
+    sessionStorage.setItem('console.refresh', 'r');
+    const auth = signedIn(roles);
+    handler = (url, init) => {
+      const a = auth(url);
+      if (a) return a;
+      if (url === '/v1/admin/lending/accounts/FA-000001')
+        return { status: 200, body: {
+            reference: 'FA-000001', status: 'contracted', productCode: 'motorcycle_ride_to_own', credit: '0',
+            customer: { fullName: 'Bola', phone: '+234 806 *** 0001' },
+            outstanding: { total: '0', principal: '0', interest: '0', penalty: '0', fees: '0' },
+            next: null, missed: { instalments: 0, amount: '0', daysOverdue: 0 }, arrears: null, schedule: [],
+          } };
+      if (url === '/v1/admin/contracts/accounts/FA-000001') return { status: 200, body: { contracts: [c] } };
+      if (url === '/v1/admin/contracts/accounts/FA-000001/guarantors') return { status: 200, body: { guarantors: [] } };
+      if (url === '/v1/admin/contracts/c-1/countersign' && init?.method === 'POST') return { status: 200, body: { status: 'fully_executed' } };
+      return { status: 200, body: {} };
+    };
+    window.history.pushState({}, '', '/console/accounts/FA-000001');
+    render(<App />);
+    await screen.findByText('Bola Rider');
+  }
+
+  it('a manager countersigns on the company’s turn and sees independence flags', async () => {
+    vi.stubGlobal('confirm', () => true);
+    const user = userEvent.setup();
+    await renderAccount(['manager'], contract());
+    expect(screen.getByText(/same network as the borrower/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Countersign for the company' }));
+    await waitFor(() => expect(calls).toContain('POST /v1/admin/contracts/c-1/countersign'));
+  });
+
+  it('an underwriter cannot countersign or revoke', async () => {
+    await renderAccount(['underwriter'], contract());
+    expect(screen.queryByRole('button', { name: 'Countersign for the company' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Revoke' })).toBeNull();
+  });
+
+  it('offers the signed PDF only once the agreement is executed', async () => {
+    await renderAccount(['manager'], contract({ status: 'fully_executed', pdfKey: 'k.pdf', flags: [] }));
+    expect(screen.getByRole('button', { name: 'Signed PDF' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Countersign for the company' })).toBeNull();
+  });
+
+  it('the author of a template draft cannot approve it; another manager can', async () => {
+    const draft = { id: 't-2', version: 2, title: 'HP v2', body: 'x', isPlaceholder: false, status: 'draft', createdBy: 'author', createdAt: '2026-11-20T10:00:00Z', approvedAt: null, legalReviewNote: null };
+    for (const [sub, approvable] of [['author', false], ['other', true]] as const) {
+      setTokens(null);
+      sessionStorage.setItem('console.refresh', 'r');
+      const auth = signedIn(['manager'], sub);
+      handler = (url) => auth(url) ?? (url.startsWith('/v1/admin/contracts/templates/') ? { status: 200, body: { templates: [draft] } } : { status: 200, body: {} });
+      window.history.pushState({}, '', '/console/templates');
+      const { unmount } = render(<App />);
+      await screen.findByRole('heading', { name: 'v2 · HP v2' });
+      expect(!!screen.queryByRole('button', { name: 'Approve this version' })).toBe(approvable);
+      unmount();
+    }
   });
 });

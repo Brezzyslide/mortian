@@ -4,6 +4,7 @@ import { api } from '../api';
 import { useAuth } from '../auth';
 import { ErrorBox, Notice, Page, Status, useAction, useLoad } from '../components/ui';
 import { bps, dateTime, naira, toKobo } from '../format';
+import { ContractsPanel, GuarantorsPanel } from './ContractPanels';
 
 export interface Statement {
   reference: string;
@@ -98,7 +99,9 @@ export function Account() {
           )}
 
           {st.status === 'applied' && can('underwriter') && <ApproveForm st={st} onDone={reload} />}
-          {['approved', 'contracted'].includes(st.status) && can('manager') && <ActivateForm st={st} onDone={reload} />}
+          {['applied', 'approved', 'contracted'].includes(st.status) && <GuarantorsPanel reference={reference} status={st.status} />}
+          {st.status !== 'applied' && <ContractsPanel reference={reference} status={st.status} onChanged={reload} />}
+          {st.status === 'contracted' && can('manager') && <ActivateForm st={st} onDone={reload} />}
           {st.status === 'repossession_review' && can('collections') && <RepossessionForm st={st} onDone={reload} />}
           {st.status === 'repossessed' && can('collections') && <RequestForm st={st} kind="release" onDone={reload} />}
           {['repossession_review', 'repossessed'].includes(st.status) && st.arrears?.cureDeadlinePassed && can('collections', 'manager') && (
@@ -324,7 +327,8 @@ function ActivateForm({ st, onDone }: { st: Statement; onDone: () => void }) {
     <div className="panel">
       <h2>Hand over and activate</h2>
       <p className="muted">
-        Needs the deposit in credit (now {naira(st.credit)}). Generates the repayment schedule from the frozen terms.
+        The contract is fully signed. Needs the deposit in credit (now {naira(st.credit)}). Generates the repayment schedule from the
+        frozen terms.
       </p>
       <form
         className="row"

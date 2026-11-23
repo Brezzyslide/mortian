@@ -20,7 +20,8 @@
     "@project/adapters": "workspace:*",
     "@project/domain": "workspace:*",
     "@project/finance": "workspace:*",
-    "@project/identity": "workspace:*"
+    "@project/identity": "workspace:*",
+    "pdf-lib": "^1.17.1"
   },
   "devDependencies": {
     "@project/db": "workspace:*",

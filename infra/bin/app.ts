@@ -11,7 +11,11 @@ import { STAGES } from '../lib/stage.js';
 import { WafStack } from '../lib/waf-stack.js';
 
 const app = new App();
-const consoleDistPath = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', 'apps', 'console', 'dist');
+const appsDir = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', 'apps');
+const webApps = [
+  { prefix: 'console' as const, distPath: join(appsDir, 'console', 'dist') },
+  { prefix: 'sign' as const, distPath: join(appsDir, 'sign', 'dist') },
+];
 
 const slug: string = app.node.tryGetContext('projectSlug');
 const githubRepo: string = app.node.tryGetContext('githubRepo');
@@ -67,7 +71,7 @@ for (const settings of stages) {
     crossRegionReferences: true,
     alb: api.alb,
     webAclArn: waf.webAclArn,
-    consoleDistPath,
+    webApps,
     ...(domain ? { domain } : {}),
   });
 }

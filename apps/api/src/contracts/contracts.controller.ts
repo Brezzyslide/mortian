@@ -162,20 +162,24 @@ export class ContractsAdminController {
     await this.contracts.resendLink(id, auth.sub);
   }
 
-  /** Downloads the archived agreement or execution certificate. */
+  /** Downloads the archived agreement text, its PDF, or the execution certificate. */
   @StaffRoles('underwriter', 'collections', 'finance', 'manager')
   @Get(':id/archive/:which')
   async archive(@Param('id') id: string, @Param('which') which: string, @Res() res: Response) {
-    if (which !== 'agreement' && which !== 'certificate') throw new NotFoundException();
-    const { rows } = await this.pool.query<{ archive_document_key: string | null; archive_certificate_key: string | null }>(
-      'SELECT archive_document_key, archive_certificate_key FROM contract WHERE id = $1',
-      [id],
-    );
-    const key = which === 'agreement' ? rows[0]?.archive_document_key : rows[0]?.archive_certificate_key;
+    const KIND = {
+      agreement: { col: 'archive_document_key', type: 'text/plain; charset=utf-8', ext: 'txt' },
+      certificate: { col: 'archive_certificate_key', type: 'application/json', ext: 'json' },
+      pdf: { col: 'archive_pdf_key', type: 'application/pdf', ext: 'pdf' },
+    } as const;
+    const kind = KIND[which as keyof typeof KIND];
+    if (!kind || !/^[0-9a-f-]{36}$/.test(id)) throw new NotFoundException();
+    const { rows } = await this.pool.query<{ key: string | null }>(`SELECT ${kind.col} AS key FROM contract WHERE id = $1`, [id]);
+    const key = rows[0]?.key;
     if (!key) throw new NotFoundException();
     const body = await this.documents.get(key);
-    res.setHeader('content-type', which === 'agreement' ? 'text/plain; charset=utf-8' : 'application/json');
-    res.setHeader('content-disposition', `attachment; filename="${which}-${id}.${which === 'agreement' ? 'txt' : 'json'}"`);
+    res.setHeader('content-type', kind.type);
+    res.setHeader('content-disposition', `attachment; filename="${which}-${id}.${kind.ext}"`);
+    res.setHeader('cache-control', 'no-store');
     res.send(body);
   }
 }

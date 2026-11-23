@@ -119,6 +119,15 @@ describe('signing in order, end to end', () => {
     expect(cert.signers.map((s: { role: string }) => s.role)).toEqual(['borrower', 'guarantor', 'company']);
     expect(cert.note).toMatch(/not a qualified digital signature/);
     expect(createHash('sha256').update(docs.objects.get(r.certificateKey)!.body).digest('hex')).toBe(r.certificateSha256);
+    const pdf = docs.objects.get(r.pdfKey)!;
+    expect(pdf.contentType).toBe('application/pdf');
+    expect(pdf.body.subarray(0, 5).toString()).toBe('%PDF-');
+    expect(createHash('sha256').update(pdf.body).digest('hex')).toBe(r.pdfSha256);
+    expect(cert.pdf).toMatchObject({ key: r.pdfKey, sha256: r.pdfSha256 });
+    // once executed, the archive pointers cannot be repointed
+    await expect(db.pool.query(`UPDATE contract SET archive_pdf_key = 'contracts/forged.pdf' WHERE id = $1`, [contractId])).rejects.toThrow(/archive is immutable/);
+    await expect(db.pool.query(`UPDATE contract SET pdf_sha256 = $2 WHERE id = $1`, [contractId, 'd'.repeat(64)])).rejects.toThrow(/archive is immutable/);
+    expect((await contracts.forAccount(fa.id))[0]).toMatchObject({ pdfKey: r.pdfKey, pdfSha256: r.pdfSha256 });
 
     const status = (await db.pool.query('SELECT status FROM finance_account WHERE id = $1', [fa.id])).rows[0].status;
     expect(status).toBe('contracted');

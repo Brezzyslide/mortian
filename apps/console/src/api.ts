@@ -104,3 +104,15 @@ export async function signOut(): Promise<void> {
   if (rt) await fetch('/v1/auth/logout', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ refreshToken: rt }) }).catch(() => undefined);
   onSignedOut();
 }
+
+/** Downloads a protected file (e.g. an archived agreement) with the current session and saves it. */
+export async function download(path: string, filename: string): Promise<void> {
+  const r = await fetch(`/v1${path}`, { headers: accessToken ? { authorization: `Bearer ${accessToken}` } : {} });
+  if (!r.ok) throw new ApiError(r.status, await r.json().catch(() => null));
+  const url = URL.createObjectURL(await r.blob());
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}

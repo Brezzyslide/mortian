@@ -13,22 +13,27 @@ export interface EdgeStackProps extends StackProps {
   readonly webAclArn: string;
   /** Custom domain and its ACM certificate (must be in us-east-1). Required for production. */
   readonly domain?: { readonly name: string; readonly certificateArn: string };
-  /** Built console (apps/console/dist). When missing, the bucket is created but nothing is uploaded. */
-  readonly consoleDistPath?: string;
+  /**
+   * Single-page apps served from the web bucket under /<prefix>/: the staff console and the
+   * signing page. A missing dist folder creates the route but uploads nothing.
+   */
+  readonly webApps?: readonly { readonly prefix: 'console' | 'sign'; readonly distPath: string }[];
 }
 
 /** CloudFront Function (viewer request): client-side routes get the app shell; files pass through. */
 export const SPA_REWRITE = `
 function handler(event) {
   var r = event.request;
-  if (r.uri === '/console') {
-    return { statusCode: 301, statusDescription: 'Moved', headers: { location: { value: '/console/' } } };
+  var app = r.uri.split('/')[1];
+  if (app !== 'console' && app !== 'sign') return r;
+  if (r.uri === '/' + app) {
+    return { statusCode: 301, statusDescription: 'Moved', headers: { location: { value: '/' + app + '/' } } };
   }
-  if (!r.uri.split('/').pop().includes('.')) r.uri = '/console/index.html';
+  if (!r.uri.split('/').pop().includes('.')) r.uri = '/' + app + '/index.html';
   return r;
 }`;
 
-const CONSOLE_CSP = [
+const WEB_CSP = [
   "default-src 'self'",
   "script-src 'self'",
   "style-src 'self'",
@@ -67,7 +72,7 @@ export class EdgeStack extends Stack {
       responseHeadersPolicy: cloudfront.ResponseHeadersPolicy.SECURITY_HEADERS,
     };
 
-    // ---------------- Console ----------------
+    // ---------------- Web apps (console, signing page) ----------------
     const site = new s3.Bucket(this, 'ConsoleBucket', {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       encryption: s3.BucketEncryption.S3_MANAGED,
@@ -84,13 +89,15 @@ export class EdgeStack extends Stack {
 
     const consoleHeaders = new cloudfront.ResponseHeadersPolicy(this, 'ConsoleHeaders', {
       securityHeadersBehavior: {
-        contentSecurityPolicy: { contentSecurityPolicy: CONSOLE_CSP, override: true },
+        contentSecurityPolicy: { contentSecurityPolicy: WEB_CSP, override: true },
         contentTypeOptions: { override: true },
         frameOptions: { frameOption: cloudfront.HeadersFrameOption.DENY, override: true },
         referrerPolicy: { referrerPolicy: cloudfront.HeadersReferrerPolicy.NO_REFERRER, override: true },
         strictTransportSecurity: { accessControlMaxAge: Duration.days(365), includeSubdomains: true, override: true },
       },
     });
+
+    const webOrigin = origins.S3BucketOrigin.withOriginAccessControl(site);
 
     this.distribution = new cloudfront.Distribution(this, 'Api', {
       comment: 'API and staff console',
@@ -105,42 +112,49 @@ export class EdgeStack extends Stack {
           }
         : {}),
       defaultBehavior: apiBehavior,
-      additionalBehaviors: {
-        '/console*': {
-          origin: origins.S3BucketOrigin.withOriginAccessControl(site),
-          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-          cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
-          responseHeadersPolicy: consoleHeaders,
-          functionAssociations: [{ function: spaRewrite, eventType: cloudfront.FunctionEventType.VIEWER_REQUEST }],
-        },
-      },
+      additionalBehaviors: Object.fromEntries(
+        ['/console*', '/sign*'].map((path) => [
+          path,
+          {
+            origin: webOrigin,
+            viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+            cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+            responseHeadersPolicy: consoleHeaders,
+            functionAssociations: [{ function: spaRewrite, eventType: cloudfront.FunctionEventType.VIEWER_REQUEST }],
+          },
+        ]),
+      ),
     });
 
-    if (props.consoleDistPath && existsSync(props.consoleDistPath)) {
+    for (const web of props.webApps ?? []) {
+      if (!existsSync(web.distPath)) {
+        Annotations.of(this).addWarning(`${web.prefix} not built (${web.distPath} missing): run \`pnpm build\` before deploying.`);
+        continue;
+      }
+      const id = web.prefix === 'console' ? 'Console' : 'Sign';
       // Hashed assets cache for a year; index.html is always revalidated so a deploy shows at once.
-      new deploy.BucketDeployment(this, 'ConsoleAssets', {
-        sources: [deploy.Source.asset(props.consoleDistPath, { exclude: ['index.html'] })],
+      new deploy.BucketDeployment(this, `${id}Assets`, {
+        sources: [deploy.Source.asset(web.distPath, { exclude: ['index.html'] })],
         destinationBucket: site,
-        destinationKeyPrefix: 'console/',
+        destinationKeyPrefix: `${web.prefix}/`,
         cacheControl: [deploy.CacheControl.fromString('public, max-age=31536000, immutable')],
         prune: false,
       });
-      new deploy.BucketDeployment(this, 'ConsoleIndex', {
-        sources: [deploy.Source.asset(props.consoleDistPath, { exclude: ['*', '!index.html'] })],
+      new deploy.BucketDeployment(this, `${id}Index`, {
+        sources: [deploy.Source.asset(web.distPath, { exclude: ['*', '!index.html'] })],
         destinationBucket: site,
-        destinationKeyPrefix: 'console/',
+        destinationKeyPrefix: `${web.prefix}/`,
         cacheControl: [deploy.CacheControl.fromString('no-cache')],
         prune: false,
         distribution: this.distribution,
-        distributionPaths: ['/console/index.html'],
+        distributionPaths: [`/${web.prefix}/index.html`],
       });
-    } else {
-      Annotations.of(this).addWarning('Console not built (apps/console/dist missing): run `pnpm build` before deploying.');
     }
 
     const base = `https://${props.domain?.name ?? this.distribution.distributionDomainName}`;
     new CfnOutput(this, 'ApiUrl', { value: base });
     new CfnOutput(this, 'ConsoleUrl', { value: `${base}/console/` });
+    new CfnOutput(this, 'SigningUrl', { value: `${base}/sign/` });
     new CfnOutput(this, 'CloudFrontDomain', { value: this.distribution.distributionDomainName });
   }
 }
