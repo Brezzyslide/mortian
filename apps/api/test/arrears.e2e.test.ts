@@ -87,6 +87,9 @@ describe('arrears to repossession to reactivation, over HTTP', () => {
     const r = await http.post('/v1/admin/lending/jobs/daily').set(as('root')).send({}).expect(200);
     expect(r.body.dates).toEqual([today]);
     const sms = messaging.sent.find((m) => m.to === '+2348071112222' && m.templateId === 'arrears_repossession_review');
+    const notices = await http.get(`/v1/admin/lending/accounts/${ref}/notices`).set(as('col')).expect(200);
+    expect(notices.body.notices).toEqual(expect.arrayContaining([expect.objectContaining({ recipientRole: 'borrower', template: 'arrears_repossession_review' })]));
+    await http.get(`/v1/admin/lending/accounts/${ref}/notices`).set(as('rider')).expect(403);
     expect(sms?.vars['missed']).toBe('3');
   });
 

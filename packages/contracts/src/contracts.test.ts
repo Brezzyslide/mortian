@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createHash, randomBytes } from 'node:crypto';
 import { MemoryDocumentStore, SandboxCollections, SandboxMessaging } from '@project/adapters';
 import { createTestDatabase, type TestDatabase } from '@project/db';
-import { AssetService, CollectionsService, LendingService, MOTORCYCLE_PLACEHOLDER_TIERS } from '@project/finance';
+import { addPeriods, ArrearsService, AssetService, CollectionsService, LendingService, MOTORCYCLE_PLACEHOLDER_TIERS } from '@project/finance';
 import { ContractError, ContractsService } from './service.js';
 import { render, unknownPlaceholders } from './template.js';
 
@@ -217,6 +217,82 @@ describe('signing safeguards', () => {
     await expect(db.pool.query(`UPDATE contract SET rendered_text = 'x' WHERE id = $1`, [contractId])).rejects.toThrow(/immutable/);
     await expect(db.pool.query(`UPDATE contract SET status = 'issued' WHERE id = $1`, [contractId])).rejects.toThrow(/closed contract/);
     await expect(contracts.issue(fa.id, underwriter)).resolves.toBeDefined();
+  });
+});
+
+describe('guarantor arrears notices', () => {
+  /**
+   * The first guarantor declines (contract rejected), is replaced, and the second one signs.
+   * Only the guarantor on the executed agreement is ever contacted about arrears.
+   */
+  it('tells the guarantor who signed when the account goes under review, and again when it is cured', async () => {
+    const fa = await approvedAccount();
+    const declinerPhone = fa.gPhone;
+    await contracts.issue(fa.id, underwriter);
+    await signAs(fa.bPhone);
+    await contracts.decline(tokenFor(declinerPhone), 'I do not want to guarantee this');
+    const [decliner] = await contracts.guarantors(fa.id);
+    await contracts.removeGuarantor(decliner!.id, underwriter);
+    const gPhone = phone();
+    await contracts.addGuarantor(fa.id, { fullName: 'Ngozi Okafor', phone: local(gPhone), relationship: 'aunt' }, underwriter);
+    const { contractId } = await contracts.issue(fa.id, underwriter);
+    await signAs(fa.bPhone);
+    await signAs(gPhone);
+    await contracts.countersign(contractId, manager, 'Mary Manager');
+
+    const collections = new CollectionsService(db.pool, new SandboxCollections('contracts-test-secret'));
+    const va = await collections.provisionVirtualAccount(fa.id, 'Bola');
+    const pay = async (amount: bigint) => {
+      const p = new SandboxCollections('contracts-test-secret').buildWebhook({ reference: `GN-${++n}`, accountNumber: va.accountNumber, amountKobo: amount.toString(), paidAt: now.toISOString() });
+      await collections.ingestWebhook(p.body, p.headers);
+    };
+    await pay(30_000_000n);
+    const assets = new AssetService(db.pool, clock);
+    const bike = await assets.register({ kind: 'motorcycle', make: 'Bajaj', model: 'Boxer', idKind: 'chassis', identifier: 'MD2A12BZ0NOTICES', costKobo: 120_000_000n, location: 'Yard' }, manager);
+    await assets.assign(bike.id, fa.id, manager);
+    await lending().activate(fa.id, manager, '2026-12-01');
+
+    const arrears = new ArrearsService(db.pool, lending(), messaging, clock);
+    const run = async (d: string) => {
+      now = new Date(`${d}T09:00:00Z`);
+      return arrears.processAccount(fa.id, d);
+    };
+    // missed payments alone do not involve the guarantor
+    for (let d = '2026-12-08'; d < '2026-12-22'; d = addPeriods(d, 'daily', 1)) await run(d);
+    expect(messaging.sent.filter((m) => m.templateId.startsWith('guarantor_'))).toHaveLength(0);
+
+    expect((await run('2026-12-22')).status).toBe('repossession_review');
+    const review = messaging.sent.filter((m) => m.templateId === 'guarantor_arrears_review');
+    expect(review).toHaveLength(1);
+    expect(review[0]).toMatchObject({ to: gPhone, vars: { name: 'Ngozi', borrower: 'Bola Rider', reference: fa.reference, deadline: '2027-01-01' } });
+    expect(review[0]!.vars['amount']).toMatch(/^₦/);
+    expect(messaging.sent.some((m) => m.to === declinerPhone && m.templateId.startsWith('guarantor_'))).toBe(false);
+
+    // re-running the same day sends nothing twice
+    await run('2026-12-22');
+    expect(messaging.sent.filter((m) => m.templateId === 'guarantor_arrears_review')).toHaveLength(1);
+
+    // borrower pays what was asked: both borrower and guarantor are told it is resolved
+    const owed = (await lending().statement(fa.id, '2026-12-23')).arrears!.reactivationAmount;
+    await pay(owed);
+    expect((await run('2026-12-23')).status).toBe('active');
+    expect(messaging.sent.filter((m) => m.templateId === 'guarantor_arrears_cured')).toEqual([
+      expect.objectContaining({ to: gPhone, vars: { name: 'Ngozi', borrower: 'Bola Rider', reference: fa.reference } }),
+    ]);
+    const log = await arrears.notices(fa.id);
+    expect(log.map((l: { recipientRole: string; template: string }) => `${l.recipientRole}:${l.template}`).sort()).toEqual(
+      expect.arrayContaining(['guarantor:guarantor_arrears_review', 'guarantor:guarantor_arrears_cured', 'borrower:arrears_repossession_review', 'borrower:arrears_cured']),
+    );
+    expect(log.find((l: { template: string }) => l.template === 'guarantor_arrears_review')).toMatchObject({ recipientName: 'Ngozi Okafor' });
+  });
+
+  it('the guarantor signs agreeing to be told about arrears', async () => {
+    const fa = await approvedAccount();
+    await contracts.issue(fa.id, underwriter);
+    await signAs(fa.bPhone);
+    const v = await contracts.view(tokenFor(fa.gPhone));
+    expect(v.keyTerms.find((t) => t.key === 'guarantor_arrears')!.text).toMatch(/agree to be told by SMS/);
+    expect(v.documentText).toMatch(/each guarantor is told by SMS the amount needed and the deadline/);
   });
 });
 

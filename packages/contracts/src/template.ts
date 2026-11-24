@@ -73,7 +73,7 @@ Between {{company.name}} ("the Company") and {{borrower.name}}, phone {{borrower
 
 6. Ownership. The asset remains the Company's property until every amount due under this agreement is paid.
 
-7. Guarantors. {{guarantors.list}}
+7. Guarantors. {{guarantors.list}} If the account is placed under review under clause 5, each guarantor is told by SMS the amount needed and the deadline, and told again if the account is brought up to date. Each guarantor agrees to receive these messages.
 
 Questions: {{company.supportPhone}}.
 `,
@@ -88,7 +88,7 @@ export function keyTerms(
     return [
       { key: 'guarantor_liability', text: `I guarantee repayment by ${v['borrower.name']} up to ${v['guarantor.maxLiability']}.` },
       { key: 'guarantor_total', text: `The borrower will repay ${v['total.payable']} in ${v['instalment.count']} ${v['instalment.frequency']} instalments.` },
-      { key: 'guarantor_arrears', text: `I may be asked to pay if the borrower falls ${v['arrears.reviewDays']} days behind.` },
+      { key: 'guarantor_arrears', text: `I may be asked to pay if the borrower falls ${v['arrears.reviewDays']} days behind. I agree to be told by SMS when that happens and how much is owed.` },
       { key: 'guarantor_independent', text: 'I am signing for myself, on my own phone, and nobody else is signing for me.' },
     ];
   }

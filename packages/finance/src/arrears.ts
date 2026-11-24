@@ -199,7 +199,7 @@ export class ArrearsService {
   async processAccount(financeAccountId: string, asOf: string): Promise<{ status: string }> {
     await this.lending.applyCredit(financeAccountId, `due:${asOf}`, asOf);
 
-    const notices: { personId: string; faId: string; template: string; vars: Record<string, string>; key: string }[] = [];
+    const notices: Notice[] = [];
     const status = await inTx(this.pool, async (tx) => {
       const { rows } = await tx.query<AccountForJob>(
         `SELECT id, reference, person_id, status, current_snapshot_id,
@@ -268,6 +268,16 @@ export class ArrearsService {
           },
           key: `review:${fa.reference}:${asOf}`,
         });
+        const borrower = await borrowerName(tx, fa.person_id);
+        for (const g of await signedGuarantors(tx, fa.id)) {
+          notices.push({
+            guarantor: g,
+            faId: fa.id,
+            template: 'guarantor_arrears_review',
+            vars: { name: firstName(g.name), borrower, reference: fa.reference, amount: formatNaira(kobo(r.total)), deadline, support: brand.supportPhone },
+            key: `g-review:${fa.reference}:${asOf}:${g.guarantorId}`,
+          });
+        }
       } else if (fa.status === 'active' && missed.instalments > 0) {
         next = 'in_arrears';
         await tx.query(`UPDATE finance_account SET status = 'in_arrears', arrears_since = $2 WHERE id = $1`, [fa.id, asOf]);
@@ -296,6 +306,16 @@ export class ArrearsService {
           vars: { reference: fa.reference },
           key: `cured:${fa.reference}:${fa.review_started_on}`,
         });
+        const borrower = await borrowerName(tx, fa.person_id);
+        for (const g of await signedGuarantors(tx, fa.id)) {
+          notices.push({
+            guarantor: g,
+            faId: fa.id,
+            template: 'guarantor_arrears_cured',
+            vars: { name: firstName(g.name), borrower, reference: fa.reference },
+            key: `g-cured:${fa.reference}:${fa.review_started_on}:${g.guarantorId}`,
+          });
+        }
       }
       // 'repossessed' never changes automatically: release needs a manager (see approvals).
 
@@ -311,28 +331,46 @@ export class ArrearsService {
       return next;
     });
 
-    for (const n of notices) await this.notify(n.personId, n.faId, n.template, n.vars, n.key);
+    for (const n of notices) await this.notify(n);
     return { status };
   }
 
-  /** Sends one SMS per dedupe key, ever. A failed send is removed so the next run retries it. */
-  private async notify(personId: string, faId: string, template: string, vars: Record<string, string>, key: string) {
+  /**
+   * Sends one SMS per dedupe key, ever. A failed send is removed so the next run retries it.
+   * The recipient is the borrower (a person) or a guarantor (the phone they signed with).
+   */
+  private async notify(n: Notice) {
     const ins = await this.pool.query<{ id: string }>(
-      `INSERT INTO notification_log (finance_account_id, person_id, template, dedupe_key, channel)
-       VALUES ($1, $2, $3, $4, 'sms') ON CONFLICT (dedupe_key) DO NOTHING RETURNING id`,
-      [faId, personId, template, key],
+      `INSERT INTO notification_log (finance_account_id, person_id, guarantor_id, template, dedupe_key, channel)
+       VALUES ($1, $2, $3, $4, $5, 'sms') ON CONFLICT (dedupe_key) DO NOTHING RETURNING id`,
+      [n.faId, 'personId' in n ? n.personId : null, 'guarantor' in n ? n.guarantor.guarantorId : null, n.template, n.key],
     );
     if (!ins.rows[0]) return;
-    const phone = (await this.pool.query<{ phone: string | null }>('SELECT phone FROM person WHERE id = $1', [personId])).rows[0]
-      ?.phone;
+    const phone =
+      'guarantor' in n
+        ? n.guarantor.phone
+        : (await this.pool.query<{ phone: string | null }>('SELECT phone FROM person WHERE id = $1', [n.personId])).rows[0]?.phone;
     if (!phone) return;
     try {
-      const { id } = await this.messaging.send('sms', phone, template, vars);
+      const { id } = await this.messaging.send('sms', phone, n.template, n.vars);
       await this.pool.query('UPDATE notification_log SET provider_message_id = $2 WHERE id = $1', [ins.rows[0].id, id]);
     } catch (err) {
       await this.pool.query('DELETE FROM notification_log WHERE id = $1', [ins.rows[0].id]);
       throw err;
     }
+  }
+
+  /** Every message sent about an account, to the borrower or a guarantor, newest first. */
+  async notices(financeAccountId: string) {
+    const { rows } = await this.pool.query(
+      `SELECT n.sent_at AS "sentAt", n.template, n.channel, n.provider_message_id AS "providerMessageId",
+              CASE WHEN n.guarantor_id IS NULL THEN 'borrower' ELSE 'guarantor' END AS "recipientRole",
+              coalesce(g.full_name, p.full_name) AS "recipientName"
+         FROM notification_log n LEFT JOIN guarantor g ON g.id = n.guarantor_id LEFT JOIN person p ON p.id = n.person_id
+        WHERE n.finance_account_id = $1 ORDER BY n.sent_at DESC, n.id`,
+      [financeAccountId],
+    );
+    return rows;
   }
 
   /**
@@ -468,3 +506,31 @@ async function inTx<T>(pool: PoolLike, fn: (tx: Queryable) => Promise<T>): Promi
     client.release();
   }
 }
+
+type Notice = { faId: string; template: string; vars: Record<string, string>; key: string } & (
+  | { personId: string }
+  | { guarantor: { guarantorId: string; phone: string; name: string } }
+);
+
+/**
+ * Guarantors who signed the account's executed agreement, with the phone they confirmed by SMS
+ * code when signing. A guarantor who never signed is not bound, so is never contacted.
+ */
+async function signedGuarantors(tx: Queryable, financeAccountId: string) {
+  const { rows } = await tx.query<{ guarantorId: string; phone: string; name: string }>(
+    `SELECT s.guarantor_id AS "guarantorId", s.phone, s.signer_name AS name
+       FROM signing_session s
+      WHERE s.signer_role = 'guarantor' AND s.status = 'signed' AND s.phone IS NOT NULL
+        AND s.contract_id = (SELECT id FROM contract WHERE finance_account_id = $1 AND status = 'fully_executed'
+                              ORDER BY executed_at DESC LIMIT 1)
+      ORDER BY s.signer_order`,
+    [financeAccountId],
+  );
+  return rows;
+}
+
+async function borrowerName(tx: Queryable, personId: string): Promise<string> {
+  return (await tx.query<{ full_name: string | null }>('SELECT full_name FROM person WHERE id = $1', [personId])).rows[0]?.full_name ?? 'The borrower';
+}
+
+const firstName = (full: string) => full.trim().split(/\s+/)[0] ?? full;

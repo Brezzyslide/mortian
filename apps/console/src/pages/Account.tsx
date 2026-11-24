@@ -5,6 +5,7 @@ import { useAuth } from '../auth';
 import { ErrorBox, Notice, Page, Status, useAction, useLoad } from '../components/ui';
 import { bps, dateTime, naira, toKobo } from '../format';
 import { AssetPanel } from './Assets';
+import { NoticesPanel } from './NoticesPanel';
 import { ContractsPanel, GuarantorsPanel } from './ContractPanels';
 
 export interface Statement {
@@ -109,6 +110,8 @@ export function Account() {
           {['repossession_review', 'repossessed'].includes(st.status) && st.arrears?.cureDeadlinePassed && can('collections', 'manager') && (
             <RequestForm st={st} kind="close" onDone={reload} />
           )}
+
+          {!['applied', 'approved', 'contracted', 'declined', 'withdrawn'].includes(st.status) && <NoticesPanel reference={reference} />}
 
           <h2>Fees</h2>
           <FeesPanel reference={reference} fees={fees.data?.fees ?? []} onDone={reload} />

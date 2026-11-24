@@ -14,11 +14,15 @@ For each date since the last completed run, in order (capped at 60 days unless `
 | --- | --- | --- | --- |
 | active | anything missed | in_arrears | `arrears_notice` |
 | in_arrears | nothing missed | active | none |
-| active / in_arrears | oldest missed ≥ `repossessionReviewDaysOverdue` days | repossession_review; cure deadline = today + `reactivationWindowDays` | `arrears_repossession_review` (amount, missed count, deadline) |
-| repossession_review | reactivation amount fully paid | active | `arrears_cured` |
+| active / in_arrears | oldest missed ≥ `repossessionReviewDaysOverdue` days | repossession_review; cure deadline = today + `reactivationWindowDays` | `arrears_repossession_review` (amount, missed count, deadline); each guarantor: `guarantor_arrears_review` |
+| repossession_review | reactivation amount fully paid | active | `arrears_cured`; each guarantor: `guarantor_arrears_cured` |
 | repossessed | (never automatic) | | |
 
-Notices go by SMS once per event (`notification_log` deduplicates). Guarantor notices are added with guarantors in Phase 2.
+Notices go by SMS once per event (`notification_log` deduplicates; a failed send is retried on the next run). Staff see every message sent on the account page.
+
+**Guarantors** are told only at review (the serious stage) and when it is cured, not for every missed payment. Only guarantors who signed the account's executed agreement are contacted, at the phone number they confirmed by SMS code when signing; a guarantor who declined or was replaced never is. The agreement's guarantor clause and the item guarantors tick before signing both state that they will receive these messages. Templates and suggested wording: [integrations.md](integrations.md#sms-templates).
+
+Not yet: telling guarantors about repossession or closure, or a formal demand to a guarantor after a shortfall. A demand is a legal step and needs lawyer-approved wording.
 
 One runner at a time across all API instances (advisory lock). Re-running a date changes nothing.
 

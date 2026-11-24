@@ -18,3 +18,20 @@ Status values: **live** (real provider, production credentials), **sandbox-real*
 | BusinessRegistry | CAC verification | — | not started (Phase 4) |
 
 Update this file in the same commit as any adapter change.
+
+## SMS templates
+
+Every message the platform sends, by template id. Register these with the SMS provider once chosen (sender ID and template approval are usually needed). Wording below is suggested; variables in `{braces}` are filled by the platform.
+
+| Template | To | Variables | Suggested wording |
+| --- | --- | --- | --- |
+| `auth_otp_login` | customer | `code`, `minutes` | Your sign-in code is {code}. It expires in {minutes} minutes. Never share it. |
+| `contract_sign_link` | borrower, guarantor | `name`, `reference`, `url` | {name}, please read and sign agreement {reference}: {url} |
+| `contract_sign_otp` | borrower, guarantor | `code`, `reference` | Your code to sign {reference} is {code}. Never share it. |
+| `arrears_notice` | borrower | `reference`, `amount`, `since` | {reference}: you have missed a payment since {since}. Pay {amount} to catch up and stop penalty interest. |
+| `arrears_repossession_review` | borrower | `reference`, `missed`, `amount`, `deadline` | {reference} is under review after {missed} missed payments. Pay {amount} by {deadline} to keep it. |
+| `arrears_cured` | borrower | `reference` | {reference} is up to date again. Thank you. |
+| `guarantor_arrears_review` | guarantor who signed | `name`, `borrower`, `reference`, `amount`, `deadline`, `support` | {name}, {borrower}, whom you guaranteed, is behind on {reference}. {amount} is needed by {deadline}. Questions: {support}. |
+| `guarantor_arrears_cured` | guarantor who signed | `name`, `borrower`, `reference` | {name}, {borrower}'s account {reference} is up to date again. No action is needed. |
+
+Staff setup links are shown in the console for the admin to pass on; they are not sent by SMS.
