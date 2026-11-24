@@ -103,7 +103,7 @@ describe('staff sign-in and navigation', () => {
 
     const nav = await screen.findByRole('navigation');
     const links = within(nav).getAllByRole('link').map((a) => a.textContent);
-    expect(links).toEqual(['Overview', 'Applications', 'Approvals', 'Arrears', 'Assets', 'Tiers', 'Contract templates', 'Products', 'Audit log']);
+    expect(links).toEqual(['Overview', 'Applications', 'Approvals', 'Arrears', 'Deliveries', 'Riders', 'Delivery pricing', 'Assets', 'Tiers', 'Contract templates', 'Products', 'Audit log']);
     expect(links).not.toContain('Payment exceptions'); // finance only
     expect(sessionStorage.getItem('console.refresh')).toBe('r');
   });
@@ -153,7 +153,7 @@ describe('staff sign-in and navigation', () => {
     render(<App />);
     expect(await screen.findByText('₦3,600,000.00', { selector: '.v' })).toBeInTheDocument();
     const links = within(screen.getByRole('navigation')).getAllByRole('link').map((a) => a.textContent);
-    expect(links).toEqual(['Overview', 'Payment exceptions', 'Assets']);
+    expect(links).toEqual(['Overview', 'Payment exceptions', 'Deliveries', 'Delivery pricing', 'Assets']);
     await waitFor(() => expect(calls.some((c) => c.includes('/admin/lending/approvals'))).toBe(false));
   });
 });
@@ -323,14 +323,18 @@ describe('asset screens', () => {
     location: 'Mararaba yard', reference: null, createdAt: '2026-11-24T09:00:00Z',
   };
 
-  it('an operations user lands on Assets (not a redirect loop) and registers a bike with the cost in kobo', async () => {
+  it('an operations user lands on their first screen (not a redirect loop) and registers a bike with the cost in kobo', async () => {
     const user = userEvent.setup();
     const auth = as(['dispatch_ops']);
-    handler = (url, init) => auth(url) ?? (url.startsWith('/v1/admin/assets') && init?.method !== 'POST' ? { status: 200, body: { assets: [BIKE] } } : { status: 201, body: BIKE });
+    handler = (url, init) => auth(url) ?? (url.startsWith('/v1/admin/dispatch/jobs') ? { status: 200, body: { jobs: [] } } : url.startsWith('/v1/admin/assets') && init?.method !== 'POST' ? { status: 200, body: { assets: [BIKE] } } : { status: 201, body: BIKE });
     window.history.pushState({}, '', '/console/');
+    const { unmount } = render(<App />);
+    await waitFor(() => expect(window.location.pathname).toBe('/console/deliveries'));
+    unmount();
+    window.history.pushState({}, '', '/console/assets');
     render(<App />);
     expect(await screen.findByText('Bajaj Boxer (2026)')).toBeInTheDocument();
-    expect(within(screen.getByRole('navigation')).getAllByRole('link').map((a) => a.textContent)).toEqual(['Assets']);
+    expect(within(screen.getByRole('navigation')).getAllByRole('link').map((a) => a.textContent)).toEqual(['Deliveries', 'Riders', 'Delivery pricing', 'Assets']);
     await user.click(screen.getByRole('button', { name: 'Register an asset' }));
     await user.type(screen.getByLabelText('Make'), 'Bajaj');
     await user.type(screen.getByLabelText('Model'), 'Boxer');
@@ -385,5 +389,31 @@ describe('document review', () => {
     await user.type(screen.getByLabelText(/Note/), 'Photo is blurred, retake in daylight');
     await user.click(screen.getByRole('button', { name: 'Reject' }));
     await waitFor(() => expect(bodies['POST /v1/admin/documents/d1/review']).toEqual({ decision: 'rejected', note: 'Photo is blurred, retake in daylight' }));
+  });
+});
+
+describe('dispatch screens', () => {
+  it('a rider cannot be activated until their licence is accepted, and a note is required', async () => {
+    const user = userEvent.setup();
+    setTokens(null);
+    sessionStorage.setItem('console.refresh', 'r');
+    const riders = [
+      { personId: 'p1', reference: 'R-00001', kind: 'own_bike', status: 'pending', online: false, fullName: 'Musa Rider', phone: '+2348060000001', financeReference: null, licenceAccepted: false, appliedAt: '2026-11-24T09:00:00Z', lastSeenAt: null },
+      { personId: 'p2', reference: 'R-00002', kind: 'financed', status: 'pending', online: false, fullName: 'Bola Rider', phone: '+2348060000002', financeReference: 'FA-000004', licenceAccepted: true, appliedAt: '2026-11-24T09:00:00Z', lastSeenAt: null },
+    ];
+    handler = (url) =>
+      url === '/v1/auth/refresh'
+        ? { status: 200, body: { accessToken: jwt({ sub: 'ops', kind: 'staff', mfa: true, roles: ['dispatch_ops'] }), refreshToken: 'r2' } }
+        : url.startsWith('/v1/admin/dispatch/riders?') ? { status: 200, body: { riders } } : { status: 204 };
+    window.history.pushState({}, '', '/console/riders');
+    render(<App />);
+    expect(await screen.findByText('Financed (FA-000004)')).toBeInTheDocument();
+    const [noLicence, ready] = screen.getAllByRole('button', { name: 'Activate' });
+    await user.type(screen.getByLabelText('Note for R-00001'), 'checked');
+    expect(noLicence).toBeDisabled();
+    expect(ready).toBeDisabled(); // no note yet
+    await user.type(screen.getByLabelText('Note for R-00002'), 'Licence checked');
+    await user.click(ready!);
+    await waitFor(() => expect(bodies['POST /v1/admin/dispatch/riders/p2/decision']).toEqual({ decision: 'active', note: 'Licence checked' }));
   });
 });
