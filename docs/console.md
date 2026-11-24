@@ -15,6 +15,7 @@ Served at `/console/` on the same address as the API, so it calls `/v1` same-ori
 | Tiers | underwriter (view), manager (publish) | Current version per tier; publish a new version; super admin can load the labelled placeholders |
 | Deliveries | operations, finance, manager | Every job with route, fare, payment method, rider, status, flags (far from drop-off, code locked), history; cancel before pickup (operations, manager) |
 | Riders | operations, manager | Approve (needs accepted licence) or suspend, with a note |
+| Rider payouts | finance, manager | Bank accounts whose name does not match the rider (approve or reject with reason), payout rules (manager changes them), every payout with fees and status |
 | Delivery pricing | operations, finance, manager | Current prices; a manager sets new ones (apply to new quotes only) |
 | Assets | operations, underwriter, collections, finance, manager | Register units (operations, manager), search by chassis/IMEI/plate/account, history, record location, return to stock, papers handed over, write off (manager). Account page: assign a unit before handover, request a resale of a recovered unit |
 | Contract templates | underwriter (view), manager (write, approve) | Versions per product. A manager other than the author approves with a legal review note; approved wording is frozen. Super admin can load the labelled placeholder |

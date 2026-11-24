@@ -42,9 +42,36 @@ A rider's account balance is what they are owed (credit) or owe (debit). A rider
 
 Each payment event posts once (idempotency key = provider event id); a repeat is acknowledged as a duplicate.
 
+## Payouts
+
+Riders are paid from their dispatch-book balance (earnings minus any cash commission owed) by bank transfer through the `Payouts` port. Riders need no account with the provider.
+
+**Bank account.** The rider picks a bank and enters the 10-digit account number. The provider returns the name the bank holds; it is compared word by word with the rider's verified name (any order, accents ignored, at least two names must appear). A match is ready at once; anything else waits for finance to approve or reject with a reason (console: Rider payouts). Changing the account texts the rider (`payout_account_changed`) and pauses payouts for the cooling-off period, so a stolen phone cannot quietly redirect pay. Only the last four digits are ever shown.
+
+**When.**
+- *Weekly:* on the set weekday the daily job pays every active rider their whole balance (at least the minimum). The platform pays the transfer fee. Runs at most once per rider per day; a rider without a usable account is skipped, not a failure for everyone.
+- *Instant:* the rider withdraws any amount above the minimum, up to a daily limit. By default the rider pays the transfer fee (taken from the amount).
+
+**Loan share (opt-in).** A financed rider can send a share of every payout (up to the set maximum) to their loan. It is a separate transfer to their own repayment account, so it arrives through the collections webhook into the financing book like any other repayment; the two books never share an entry. No fee is taken from the loan part.
+
+**Money.**
+
+| When | Entry (dispatch book) |
+|---|---|
+| Payout created | Dr `dsp:rider:<R>` gross / Cr `dsp:payout_in_transit:<PO>` net / Cr `dsp:income:payout_fees` rider fee |
+| Transfer succeeded | Dr in-transit / Cr `dsp:clearing:<provider>` net; Dr `dsp:expense:transfer_fees` / Cr clearing provider fee |
+| Transfer failed (webhook, or the provider refused at once) | Everything back to the rider, fee included |
+
+The rider row is locked while a payout is created, so two withdrawals at once cannot spend the same balance. Each outcome posts once; a repeated webhook is a duplicate. Finished payouts cannot be changed or deleted.
+
+Placeholder rules: Monday weekly payout, ₦1,000 minimum, instant on with the rider paying the fee, ₦100,000 a day, loan share up to 50%, 24-hour cooling-off.
+
+Fees follow Paystack's published Nigerian transfer pricing (₦10 up to ₦5,000, ₦25 up to ₦50,000, ₦50 above, plus ₦50 stamp duty from ₦10,000); the sandbox charges the same so test books are realistic.
+
 ## Not yet built
 
-- **Payouts** to riders' bank accounts (bank account check against their verified name, weekly automatic payout plus instant withdrawal, opt-in loan repayment share), and paying out refunds. Fees: see [integrations.md](integrations.md).
+- Paying refunds owed to customers for cancelled paid jobs (the liability is recorded; the transfer is not built).
+- Recovering cash commission a rider owes when they have no in-app earnings (today it waits for future earnings).
 - **Customer booking screens** in the app: need address search and a map pin, i.e. a maps provider.
-- **Rider app** (Android): planned after staging.
+- **Rider app** (Android): planned after staging. The rider endpoints (jobs, codes, earnings, bank account, withdrawals, loan share) are ready for it.
 - Merchants and bulk bookings, live tracking map, proof-of-delivery photos, disputes.

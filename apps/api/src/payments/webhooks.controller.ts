@@ -12,12 +12,12 @@ import {
 } from '@nestjs/common';
 import type { RawBodyRequest } from '@nestjs/common';
 import type { Request } from 'express';
-import { InvalidWebhookPayloadError, InvalidWebhookSignatureError, type Checkout, type Collections } from '@project/adapters';
-import { DispatchService } from '@project/dispatch';
+import { InvalidWebhookPayloadError, InvalidWebhookSignatureError, type Checkout, type Collections, type Payouts } from '@project/adapters';
+import { DispatchService, PayoutService } from '@project/dispatch';
 import { CollectionsService, LendingService } from '@project/finance';
 import { applyAfterPayment } from './apply-after-payment.js';
 import { Public } from '../auth/decorators.js';
-import { CHECKOUT, COLLECTIONS } from '../infra.module.js';
+import { CHECKOUT, COLLECTIONS, PAYOUTS } from '../infra.module.js';
 
 @Controller('webhooks')
 export class WebhooksController {
@@ -29,7 +29,29 @@ export class WebhooksController {
     @Inject(LendingService) private readonly lending: LendingService,
     @Inject(CHECKOUT) private readonly checkout: Checkout,
     @Inject(DispatchService) private readonly dispatch: DispatchService,
+    @Inject(PAYOUTS) private readonly payoutsProvider: Payouts,
+    @Inject(PayoutService) private readonly payouts: PayoutService,
   ) {}
+
+  /** Transfer outcomes for rider payouts. Same rules: verify, then exactly once. */
+  @Public()
+  @Post('payouts/:provider')
+  @HttpCode(200)
+  async receivePayouts(@Param('provider') provider: string, @Req() req: RawBodyRequest<Request>) {
+    if (provider !== this.payoutsProvider.info.provider) throw new NotFoundException();
+    if (!req.rawBody) throw new BadRequestException();
+    try {
+      const r = await this.payouts.transferOutcome(req.rawBody, req.headers);
+      return { received: true, outcome: r.outcome };
+    } catch (err) {
+      if (err instanceof InvalidWebhookSignatureError) {
+        this.log.warn(`Rejected ${provider} payout webhook with bad signature from ${req.ip}`);
+        throw new UnauthorizedException();
+      }
+      if (err instanceof InvalidWebhookPayloadError) throw new BadRequestException(err.message);
+      throw err;
+    }
+  }
 
   /** One-off payments (delivery fares). Same rules as collections: verify, then exactly once. */
   @Public()

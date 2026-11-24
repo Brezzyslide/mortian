@@ -9,7 +9,7 @@ Status values: **live** (real provider, production credentials), **sandbox-real*
 | BankDataInsight | Mono, Okra | — | not started (Phase 3) |
 | Collections | Paystack, Monnify, Flutterwave | `SandboxCollections` (own webhook format, HMAC-SHA512; refused in production config) | simulated |
 | Checkout | Paystack (Pay with Transfer / checkout) | `SandboxCheckout` (own webhook format, HMAC-SHA512; shares the collections secret, as Paystack signs all webhooks with one key) | simulated |
-| Payouts | Paystack, Monnify, Flutterwave | — | not started |
+| Payouts | Paystack, Monnify, Flutterwave | `SandboxPayouts` (account-name check, recipients, transfers, signed outcome webhook; fees mirror Paystack NG published pricing) | simulated |
 | ConditionalSettlement | authorised bank/payment partner | — | blocked: no partner |
 | Messaging | Termii, Africa's Talking, WhatsApp Business, Firebase | `SandboxMessaging` (in-memory outbox; refused in production config) | simulated |
 | Routes (Maps) | Google Maps, Mapbox | `SandboxRoutes` (straight line × 1.3) | simulated |
@@ -34,6 +34,7 @@ Every message the platform sends, by template id. Register these with the SMS pr
 | `arrears_cured` | borrower | `reference` | {reference} is up to date again. Thank you. |
 | `guarantor_arrears_review` | guarantor who signed | `name`, `borrower`, `reference`, `amount`, `deadline`, `support` | {name}, {borrower}, whom you guaranteed, is behind on {reference}. {amount} is needed by {deadline}. Questions: {support}. |
 | `guarantor_arrears_cured` | guarantor who signed | `name`, `borrower`, `reference` | {name}, {borrower}'s account {reference} is up to date again. No action is needed. |
+| `payout_account_changed` | rider | `bank`, `last4`, `hours` | Your payout account was changed to {bank} ******{last4}. Payouts resume in {hours} hours. If this was not you, call us now. |
 | `dispatch_delivery_code` | delivery recipient | `reference`, `code` | A parcel is on its way to you ({reference}). Give the rider code {code} only when you have received it. |
 
 Staff setup links are shown in the console for the admin to pass on; they are not sent by SMS.

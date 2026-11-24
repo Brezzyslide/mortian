@@ -132,7 +132,7 @@ export class DispatchService {
       search_radius_m: number;
       is_placeholder: boolean;
       created_at: Date;
-    }>('SELECT * FROM dispatch_pricing ORDER BY created_at DESC, id DESC LIMIT 1');
+    }>('SELECT * FROM dispatch_pricing ORDER BY version DESC LIMIT 1');
     const r = rows[0];
     if (!r) return null;
     return {

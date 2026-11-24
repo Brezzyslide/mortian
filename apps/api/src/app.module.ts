@@ -10,6 +10,7 @@ import { HealthController } from './health/health.controller.js';
 import { AuthErrorFilter } from './http.js';
 import { AssetErrorFilter, AssetsController, LendingErrorFilter } from './assets/assets.controller.js';
 import { DispatchController, DispatchErrorFilter } from './dispatch/dispatch.controller.js';
+import { PayoutErrorFilter, PayoutsController } from './dispatch/payouts.controller.js';
 import { DocumentErrorFilter, DocumentsController } from './documents/documents.controller.js';
 import { ContractErrorFilter, ContractsAdminController, SigningController } from './contracts/contracts.controller.js';
 import { InfraModule, type InfraOverrides } from './infra.module.js';
@@ -33,6 +34,7 @@ export class AppModule {
         AssetsController,
         DocumentsController,
         DispatchController,
+        PayoutsController,
         HealthController,
         AuthController,
         AdminController,
@@ -54,6 +56,7 @@ export class AppModule {
         { provide: APP_FILTER, useClass: LendingErrorFilter },
         { provide: APP_FILTER, useClass: DocumentErrorFilter },
         { provide: APP_FILTER, useClass: DispatchErrorFilter },
+        { provide: APP_FILTER, useClass: PayoutErrorFilter },
         { provide: APP_INTERCEPTOR, useClass: BigIntInterceptor },
       ],
     };

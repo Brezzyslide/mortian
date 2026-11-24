@@ -16,6 +16,7 @@ import { Staff } from './pages/Staff';
 import { Products } from './pages/Products';
 import { AssetDetail, Assets } from './pages/Assets';
 import { Deliveries, DispatchPricing, Riders } from './pages/Dispatch';
+import { Payouts } from './pages/Payouts';
 import { Templates } from './pages/Templates';
 import { Tiers } from './pages/Tiers';
 
@@ -35,6 +36,7 @@ export const NAV: NavItem[] = [
   { to: '/exceptions', label: 'Payment exceptions', roles: ['finance'], element: <Exceptions /> },
   { to: '/deliveries', label: 'Deliveries', roles: ['dispatch_ops', 'finance', 'manager'], element: <Deliveries /> },
   { to: '/riders', label: 'Riders', roles: ['dispatch_ops', 'manager'], element: <Riders /> },
+  { to: '/payouts', label: 'Rider payouts', roles: ['finance', 'manager'], element: <Payouts /> },
   { to: '/delivery-pricing', label: 'Delivery pricing', roles: ['dispatch_ops', 'finance', 'manager'], element: <DispatchPricing /> },
   { to: '/assets', label: 'Assets', roles: ['dispatch_ops', 'underwriter', 'collections', 'finance', 'manager'], element: <Assets /> },
   { to: '/tiers', label: 'Tiers', roles: ['underwriter', 'manager'], element: <Tiers /> },

@@ -6,16 +6,18 @@ import {
   S3DocumentStore,
   SandboxCheckout,
   SandboxCollections,
+  SandboxPayouts,
   SandboxRoutes,
   SandboxMessaging,
   type Checkout,
   type Collections,
   type DocumentStore,
   type Messaging,
+  type Payouts,
   type Routes,
 } from '@project/adapters';
 import { ContractsService } from '@project/contracts';
-import { DispatchService } from '@project/dispatch';
+import { DispatchService, PayoutService } from '@project/dispatch';
 import { ArrearsService, AssetService, CollectionsService, CustomerDocumentService, LendingService } from '@project/finance';
 import { IdentityService, StaffAdminService } from '@project/identity';
 import { APP_CONFIG, type AppConfig } from './config.js';
@@ -25,6 +27,7 @@ export const PG_POOL = Symbol('PG_POOL');
 export const MESSAGING = Symbol('MESSAGING');
 export const COLLECTIONS = Symbol('COLLECTIONS');
 export const CHECKOUT = Symbol('CHECKOUT');
+export const PAYOUTS = Symbol('PAYOUTS');
 
 export interface InfraOverrides {
   pool?: pg.Pool;
@@ -34,6 +37,7 @@ export interface InfraOverrides {
   kycDocuments?: DocumentStore;
   checkout?: Checkout;
   routes?: Routes;
+  payouts?: Payouts;
 }
 
 export const DOCUMENTS = Symbol('DOCUMENTS');
@@ -54,6 +58,8 @@ export class InfraModule implements OnApplicationShutdown {
     const collections = overrides.collections ?? new SandboxCollections(config.COLLECTIONS_WEBHOOK_SECRET);
     // Paystack signs every webhook with the one secret key, so checkout shares the collections secret.
     const checkout = overrides.checkout ?? new SandboxCheckout(config.COLLECTIONS_WEBHOOK_SECRET);
+    // Paystack again signs transfer webhooks with the same secret key.
+    const payouts = overrides.payouts ?? new SandboxPayouts(config.COLLECTIONS_WEBHOOK_SECRET);
     const dispatch = new DispatchService(pool, overrides.routes ?? new SandboxRoutes(), checkout, messaging, {
       // A key of its own, derived so no new secret is needed: delivery codes never reuse the OTP pepper directly.
       codePepper: createHash('sha256').update('dispatch-codes:').update(config.AUTH_OTP_PEPPER).digest(),
@@ -79,6 +85,8 @@ export class InfraModule implements OnApplicationShutdown {
         { provide: COLLECTIONS, useValue: collections },
         { provide: CHECKOUT, useValue: checkout },
         { provide: DispatchService, useValue: dispatch },
+        { provide: PAYOUTS, useValue: payouts },
+        { provide: PayoutService, useValue: new PayoutService(pool, payouts, messaging) },
         {
           provide: IdentityService,
           useValue: new IdentityService(pool, messaging, {
@@ -98,7 +106,7 @@ export class InfraModule implements OnApplicationShutdown {
         { provide: ArrearsService, useValue: new ArrearsService(pool, lending, messaging) },
         { provide: AssetService, useValue: new AssetService(pool) },
       ],
-      exports: [APP_CONFIG, PG_POOL, MESSAGING, COLLECTIONS, IdentityService, StaffAdminService, CollectionsService, LendingService, ArrearsService, AssetService, ContractsService, CustomerDocumentService, DispatchService, CHECKOUT, DOCUMENTS, KYC_DOCUMENTS],
+      exports: [APP_CONFIG, PG_POOL, MESSAGING, COLLECTIONS, IdentityService, StaffAdminService, CollectionsService, LendingService, ArrearsService, AssetService, ContractsService, CustomerDocumentService, DispatchService, PayoutService, CHECKOUT, PAYOUTS, DOCUMENTS, KYC_DOCUMENTS],
     };
   }
 

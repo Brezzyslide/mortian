@@ -4,3 +4,4 @@ export * from './sandbox/messaging.js';
 export * from './sandbox/collections.js';
 export * from './documents.js';
 export * from './sandbox/dispatch.js';
+export * from './sandbox/payouts.js';

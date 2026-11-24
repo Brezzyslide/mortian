@@ -109,6 +109,44 @@ export interface Checkout {
   parseWebhook(rawBody: Buffer, headers: Record<string, string | string[] | undefined>): ChargePaid | null;
 }
 
+// ---------- Payouts (transfers to bank accounts) ----------
+export interface Bank {
+  readonly code: string;
+  readonly name: string;
+}
+
+export class AccountNotFoundError extends Error {
+  constructor() {
+    super('account_not_found');
+  }
+}
+
+export interface TransferResult {
+  readonly providerTransferId: string;
+}
+
+export interface TransferOutcome {
+  /** Our payout reference, echoed back by the provider. */
+  readonly reference: string;
+  readonly status: 'succeeded' | 'failed';
+  readonly reason: string | null;
+  readonly providerEventId: string;
+}
+
+export interface Payouts {
+  readonly info: AdapterInfo;
+  banks(): Promise<readonly Bank[]>;
+  /** The name the bank holds for this account. Throws AccountNotFoundError. */
+  resolveAccount(bankCode: string, accountNumber: string): Promise<{ accountName: string }>;
+  /** Registers a destination; returns the provider's code for it. */
+  createRecipient(input: { name: string; bankCode: string; accountNumber: string }): Promise<{ recipientCode: string }>;
+  /** Starts a transfer. The final outcome arrives by webhook. */
+  transfer(input: { reference: string; amount: Kobo; recipientCode: string; reason: string }): Promise<TransferResult>;
+  /** What the provider charges for a transfer of this amount (including any duty it collects). */
+  transferFee(amount: Kobo): Kobo;
+  parseWebhook(rawBody: Buffer, headers: Record<string, string | string[] | undefined>): TransferOutcome | null;
+}
+
 // ---------- Routes (distance for pricing) ----------
 export interface Point {
   readonly lat: number;
