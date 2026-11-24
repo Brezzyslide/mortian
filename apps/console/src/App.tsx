@@ -17,6 +17,7 @@ import { Products } from './pages/Products';
 import { AssetDetail, Assets } from './pages/Assets';
 import { Deliveries, DispatchPricing, Riders } from './pages/Dispatch';
 import { Payouts } from './pages/Payouts';
+import { SandboxInbox } from './pages/SandboxInbox';
 import { Templates } from './pages/Templates';
 import { Tiers } from './pages/Tiers';
 
@@ -43,6 +44,7 @@ export const NAV: NavItem[] = [
   { to: '/templates', label: 'Contract templates', roles: ['underwriter', 'manager'], element: <Templates /> },
   { to: '/products', label: 'Products', roles: ['manager'], element: <Products /> },
   { to: '/audit', label: 'Audit log', roles: ['manager'], element: <Audit /> },
+  { to: '/sandbox-sms', label: 'Sandbox SMS', roles: ['manager'], element: <SandboxInbox /> },
   { to: '/staff', label: 'Staff', roles: ['super_admin'], element: <Staff /> },
 ];
 

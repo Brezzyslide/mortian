@@ -10,7 +10,11 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "dev": "turbo run dev --parallel",
-    "synth": "pnpm --filter @project/infra synth"
+    "synth": "pnpm --filter @project/infra synth",
+    "local:setup": "node scripts/local.mjs setup",
+    "local": "node scripts/local.mjs start",
+    "local:daily": "node scripts/local.mjs daily",
+    "local:reset": "node scripts/local.mjs reset"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

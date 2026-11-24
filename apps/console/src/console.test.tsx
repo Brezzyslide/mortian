@@ -103,7 +103,7 @@ describe('staff sign-in and navigation', () => {
 
     const nav = await screen.findByRole('navigation');
     const links = within(nav).getAllByRole('link').map((a) => a.textContent);
-    expect(links).toEqual(['Overview', 'Applications', 'Approvals', 'Arrears', 'Deliveries', 'Riders', 'Rider payouts', 'Delivery pricing', 'Assets', 'Tiers', 'Contract templates', 'Products', 'Audit log']);
+    expect(links).toEqual(['Overview', 'Applications', 'Approvals', 'Arrears', 'Deliveries', 'Riders', 'Rider payouts', 'Delivery pricing', 'Assets', 'Tiers', 'Contract templates', 'Products', 'Audit log', 'Sandbox SMS']);
     expect(links).not.toContain('Payment exceptions'); // finance only
     expect(sessionStorage.getItem('console.refresh')).toBe('r');
   });

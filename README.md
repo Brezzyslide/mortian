@@ -42,3 +42,7 @@ pnpm synth        # CDK synth, no AWS credentials needed
 ## Status
 
 Phase 1 money engine and AWS stacks; Phase 2 contracts, signing and the customer app (`docs/customer-app.md`). See `docs/integrations.md` for what is live, simulated or blocked. Nothing in this repo talks to a real provider yet.
+
+## Run it on your computer
+
+`pnpm local:setup` once, then `pnpm local`. See [docs/local.md](docs/local.md).

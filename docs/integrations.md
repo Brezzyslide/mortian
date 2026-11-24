@@ -15,7 +15,7 @@ Status values: **live** (real provider, production credentials), **sandbox-real*
 | Routes (Maps) | Google Maps, Mapbox | `SandboxRoutes` (straight line × 1.3) | simulated |
 | Telematics | Traccar, Wialon | — | not started (Phase 2) |
 | ExternalSigning | DocuSign and similar | — | optional |
-| DocumentStore | AWS S3 (contracts bucket, Object Lock) | `S3DocumentStore` (write-once, SHA-256 checked); `MemoryDocumentStore` for dev/test | live (AWS) / simulated |
+| DocumentStore | AWS S3 (contracts bucket, Object Lock) | `S3DocumentStore` (write-once, SHA-256 checked); `MemoryDocumentStore` for tests; `FolderDocumentStore` (write-once files under `LOCAL_DOCUMENTS_DIR`, refused outside development) for the local run | live (AWS) / simulated |
 | BusinessRegistry | CAC verification | — | not started (Phase 4) |
 
 Update this file in the same commit as any adapter change.

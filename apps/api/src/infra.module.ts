@@ -1,7 +1,9 @@
+import { join } from 'node:path';
 import { Global, Inject, Module, type OnApplicationShutdown } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import pg from 'pg';
 import {
+  FolderDocumentStore,
   MemoryDocumentStore,
   S3DocumentStore,
   SandboxCheckout,
@@ -68,10 +70,12 @@ export class InfraModule implements OnApplicationShutdown {
       requireSignedContract: config.REQUIRE_SIGNED_CONTRACT,
       requireAsset: config.REQUIRE_ASSET_AT_HANDOVER,
     });
+    const localStore = (sub: string) =>
+      config.LOCAL_DOCUMENTS_DIR ? new FolderDocumentStore(join(config.LOCAL_DOCUMENTS_DIR, sub)) : new MemoryDocumentStore();
     const documents =
-      overrides.documents ?? (config.CONTRACTS_BUCKET ? new S3DocumentStore(config.CONTRACTS_BUCKET) : new MemoryDocumentStore());
+      overrides.documents ?? (config.CONTRACTS_BUCKET ? new S3DocumentStore(config.CONTRACTS_BUCKET) : localStore('contracts'));
     const kycDocuments =
-      overrides.kycDocuments ?? (config.KYC_BUCKET ? new S3DocumentStore(config.KYC_BUCKET) : new MemoryDocumentStore());
+      overrides.kycDocuments ?? (config.KYC_BUCKET ? new S3DocumentStore(config.KYC_BUCKET) : localStore('kyc'));
     const contracts = new ContractsService(pool, messaging, documents, {
       otpPepper: config.AUTH_OTP_PEPPER,
       signingBaseUrl: config.SIGNING_BASE_URL ?? null,
