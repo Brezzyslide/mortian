@@ -10,7 +10,7 @@ import {
   type Messaging,
 } from '@project/adapters';
 import { ContractsService } from '@project/contracts';
-import { ArrearsService, CollectionsService, LendingService } from '@project/finance';
+import { ArrearsService, AssetService, CollectionsService, LendingService } from '@project/finance';
 import { IdentityService, StaffAdminService } from '@project/identity';
 import { APP_CONFIG, type AppConfig } from './config.js';
 import { createPool } from './db.js';
@@ -41,7 +41,10 @@ export class InfraModule implements OnApplicationShutdown {
     const pool = overrides.pool ?? createPool(config);
     const messaging = overrides.messaging ?? new SandboxMessaging();
     const collections = overrides.collections ?? new SandboxCollections(config.COLLECTIONS_WEBHOOK_SECRET);
-    const lending = new LendingService(pool, undefined, { requireSignedContract: config.REQUIRE_SIGNED_CONTRACT });
+    const lending = new LendingService(pool, undefined, {
+      requireSignedContract: config.REQUIRE_SIGNED_CONTRACT,
+      requireAsset: config.REQUIRE_ASSET_AT_HANDOVER,
+    });
     const documents =
       overrides.documents ?? (config.CONTRACTS_BUCKET ? new S3DocumentStore(config.CONTRACTS_BUCKET) : new MemoryDocumentStore());
     const contracts = new ContractsService(pool, messaging, documents, {
@@ -70,8 +73,9 @@ export class InfraModule implements OnApplicationShutdown {
         { provide: DOCUMENTS, useValue: documents },
         { provide: ContractsService, useValue: contracts },
         { provide: ArrearsService, useValue: new ArrearsService(pool, lending, messaging) },
+        { provide: AssetService, useValue: new AssetService(pool) },
       ],
-      exports: [APP_CONFIG, PG_POOL, MESSAGING, COLLECTIONS, IdentityService, StaffAdminService, CollectionsService, LendingService, ArrearsService, ContractsService, DOCUMENTS],
+      exports: [APP_CONFIG, PG_POOL, MESSAGING, COLLECTIONS, IdentityService, StaffAdminService, CollectionsService, LendingService, ArrearsService, AssetService, ContractsService, DOCUMENTS],
     };
   }
 

@@ -3,6 +3,7 @@ import { recordAudit, type PoolLike, type Queryable } from '@project/identity';
 import { accountBalance, postEntryInTx, type EntryDraft, type LedgerLine } from '@project/ledger';
 import { allocate, DEFAULT_WATERFALL, type Bucket, type Due } from './allocation.js';
 import { reactivationAmountOf, reactivationSteps, type ArrearsStep } from './arrears.js';
+import { accountAssetTx, moveAccountAssetTx, productNeedsAsset } from './assets.js';
 import { suspenseAccount, type FinanceProductCode } from './collections.js';
 import { addPeriods, daysBetween, depositOf, financedPrincipalOf, generateSchedule, lagosDate } from './schedule.js';
 import { resolveTerms, validateTierConfig, type NumericTerm, type TermSet, type TierConfig } from './terms.js';
@@ -17,9 +18,14 @@ export const acct = {
   interestIncome: 'fin:income:interest',
   feeIncome: 'fin:income:fees',
   feeWaivers: 'fin:expense:fee_waivers',
+  /** Buyer money for a resold asset, until finance matches it to the bank deposit. */
+  resaleClearing: 'fin:clearing:asset_resale',
+  /** Resale proceeds beyond what the borrower owed: owed back to them. */
+  surplus: (ref: string) => `fin:payable:resale_surplus:${ref}`,
 };
 
-export type ApprovalKind = 'terms_out_of_bounds' | 'fee_waiver' | 'repossession' | 'release' | 'close_recovered';
+export type ApprovalKind = 'terms_out_of_bounds' | 'fee_waiver' | 'repossession' | 'release' | 'close_recovered' | 'asset_sale';
+export type RecoveryKind = 'repossession' | 'release' | 'close_recovered' | 'asset_sale';
 
 class DryRun extends Error {}
 
@@ -33,7 +39,8 @@ export class LendingError extends Error {
       | 'needs_second_approver'
       | 'same_person'
       | 'deposit_not_paid'
-      | 'fee_not_open',
+      | 'fee_not_open'
+      | 'no_asset',
     message: string = code,
   ) {
     super(message);
@@ -90,10 +97,16 @@ export interface LendingOptions {
    * the API refuses it in production.
    */
   readonly requireSignedContract?: boolean;
+  /**
+   * When true (the default) handover of a product that finances an asset needs a registered,
+   * assigned asset. False exists only for tests that exercise lending without the register.
+   */
+  readonly requireAsset?: boolean;
 }
 
 export class LendingService {
   private readonly requireSignedContract: boolean;
+  private readonly requireAsset: boolean;
 
   constructor(
     private readonly pool: PoolLike,
@@ -101,6 +114,7 @@ export class LendingService {
     options: LendingOptions = {},
   ) {
     this.requireSignedContract = options.requireSignedContract ?? true;
+    this.requireAsset = options.requireAsset ?? true;
   }
 
   today(): string {
@@ -257,6 +271,10 @@ export class LendingService {
             : `Account is ${fa.status}`,
         );
       }
+      const asset = await accountAssetTx(tx, fa.id);
+      if (!asset && this.requireAsset && productNeedsAsset(fa.product_code)) {
+        throw new LendingError('no_asset', 'Assign a registered asset to this account before handover');
+      }
       const terms = await snapshotTerms(tx, fa.current_snapshot_id);
       const deposit = depositOf(terms);
       const financed = financedPrincipalOf(terms);
@@ -294,6 +312,9 @@ export class LendingService {
         ],
       );
       await tx.query(`UPDATE finance_account SET status = 'active', activated_on = $2 WHERE id = $1`, [fa.id, startDate]);
+      if (asset) {
+        await moveAccountAssetTx(tx, fa.id, { from: ['assigned'], to: 'with_customer', event: 'handed_over', actorId, at: this.clock(), location: 'With customer' });
+      }
       await recordAudit(tx, {
         actorId,
         actorKind: 'person',
@@ -419,6 +440,9 @@ export class LendingService {
       (await accountBalance(tx, acct.penalty(fa.reference)));
     if (left.rows[0]!.n === 0 && owed === 0n) {
       await tx.query(`UPDATE finance_account SET status = 'settled', settled_on = $2 WHERE id = $1`, [fa.id, this.today()]);
+      if (await accountAssetTx(tx, fa.id)) {
+        await moveAccountAssetTx(tx, fa.id, { from: ['with_customer'], to: 'paid_off', event: 'paid_off', actorId: null, at: this.clock() });
+      }
       await recordAudit(tx, {
         actorKind: 'system',
         action: 'lending.account.settled',
@@ -603,9 +627,9 @@ export class LendingService {
   }
 
   /** Checks a recovery action is possible now, so a request is refused early rather than at approval. */
-  async assertRecoveryAllowed(kind: 'repossession' | 'release' | 'close_recovered', financeAccountId: string): Promise<void> {
+  async assertRecoveryAllowed(kind: RecoveryKind, financeAccountId: string, payload: Record<string, unknown> = {}): Promise<void> {
     await inTx(this.pool, async (tx) => {
-      await this.recoveryActionTx(tx, kind, financeAccountId, {}, null);
+      await this.recoveryActionTx(tx, kind, financeAccountId, payload, null);
       throw new DryRun();
     }).catch((err) => {
       if (!(err instanceof DryRun)) throw err;
@@ -618,7 +642,7 @@ export class LendingService {
    */
   private async recoveryActionTx(
     tx: Queryable,
-    kind: 'repossession' | 'release' | 'close_recovered',
+    kind: RecoveryKind,
     financeAccountId: string,
     payload: Record<string, unknown>,
     deciderId: string | null,
@@ -637,8 +661,14 @@ export class LendingService {
       if (row.status !== 'repossession_review') {
         throw new LendingError('invalid_status', `Repossession needs repossession_review; account is ${row.status}`);
       }
+      const asset = await accountAssetTx(tx, row.id);
+      if (asset && asset.status !== 'with_customer') throw new LendingError('invalid_status', `Asset is ${asset.status}, not with the customer`);
       if (deciderId === null) return null;
       await tx.query(`UPDATE finance_account SET status = 'repossessed', repossessed_on = $2 WHERE id = $1`, [row.id, today]);
+      if (asset) {
+        const where = typeof payload['location'] === 'string' ? (payload['location'] as string) : null;
+        await moveAccountAssetTx(tx, row.id, { from: ['with_customer'], to: 'recovered', event: 'recovered', actorId: deciderId, at: this.clock(), location: where, details: payload });
+      }
       await recordAudit(tx, {
         actorId: deciderId,
         actorKind: 'person',
@@ -656,7 +686,12 @@ export class LendingService {
       if (r.total > 0n) {
         throw new LendingError('invalid_status', `Reactivation amount not cleared: ${r.total} kobo still owed`);
       }
+      const asset = await accountAssetTx(tx, row.id);
+      if (asset && asset.status !== 'recovered') throw new LendingError('invalid_status', `Asset is ${asset.status}; it can only be returned from the yard`);
       if (deciderId === null) return null;
+      if (asset) {
+        await moveAccountAssetTx(tx, row.id, { from: ['recovered'], to: 'with_customer', event: 'returned', actorId: deciderId, at: this.clock(), location: 'With customer' });
+      }
       await tx.query(
         `UPDATE finance_account SET status = 'active', arrears_since = NULL, review_started_on = NULL,
                 cure_deadline = NULL, repossessed_on = NULL WHERE id = $1`,
@@ -673,6 +708,8 @@ export class LendingService {
       return { status: 'active' };
     }
 
+    if (kind === 'asset_sale') return this.assetSaleTx(tx, row, payload, deciderId);
+
     // close_recovered
     if (!['repossession_review', 'repossessed'].includes(row.status)) {
       throw new LendingError('invalid_status', `Closing needs review or repossessed; account is ${row.status}`);
@@ -682,6 +719,10 @@ export class LendingService {
     }
     if (deciderId === null) return null;
     await tx.query(`UPDATE finance_account SET status = 'closed_recovered', closed_on = $2 WHERE id = $1`, [row.id, today]);
+    // A recovered asset becomes available to sell; one still with the customer stays recorded there.
+    if ((await accountAssetTx(tx, row.id))?.status === 'recovered') {
+      await moveAccountAssetTx(tx, row.id, { from: ['recovered'], to: 'for_sale', event: 'listed_for_sale', actorId: deciderId, at: this.clock() });
+    }
     await recordAudit(tx, {
       actorId: deciderId,
       actorKind: 'person',
@@ -691,6 +732,59 @@ export class LendingService {
       details: payload,
     });
     return { status: 'closed_recovered', closedOn: today };
+  }
+
+  /**
+   * Sells a recovered asset of a closed account. The proceeds pay down what the borrower still
+   * owes in the usual order (fees, penalty, interest, principal); any surplus is recorded as owed
+   * back to the borrower. A shortfall stays on the account. Money arrives in the resale clearing
+   * account for finance to match against the bank deposit.
+   */
+  private async assetSaleTx(
+    tx: Queryable,
+    row: AccountRow,
+    payload: Record<string, unknown>,
+    deciderId: string | null,
+  ) {
+    if (row.status !== 'closed_recovered') throw new LendingError('invalid_status', `Sale needs a closed account; account is ${row.status}`);
+    const asset = await accountAssetTx(tx, row.id);
+    if (!asset) throw new LendingError('no_asset', 'This account has no registered asset');
+    if (asset.status !== 'for_sale') throw new LendingError('invalid_status', `Asset is ${asset.status}, not for sale`);
+    const price = BigInt(String(payload['priceKobo'] ?? '0'));
+    if (price <= 0n) throw new LendingError('invalid_status', 'Sale price must be more than zero');
+    if (deciderId === null) return null;
+
+    const owed: [string, bigint][] = [
+      [acct.fees(row.reference), await accountBalance(tx, acct.fees(row.reference))],
+      [acct.penalty(row.reference), await accountBalance(tx, acct.penalty(row.reference))],
+      [acct.interest(row.reference), await accountBalance(tx, acct.interest(row.reference))],
+      [acct.principal(row.reference), await accountBalance(tx, acct.principal(row.reference))],
+    ];
+    let left = price;
+    const lines: LedgerLine[] = [{ account: acct.resaleClearing, side: 'debit', amount: kobo(price) }];
+    const applied: Record<string, string> = {};
+    for (const [account, balance] of owed) {
+      const take = balance > 0n ? (left < balance ? left : balance) : 0n;
+      if (take > 0n) {
+        lines.push({ account, side: 'credit', amount: kobo(take) });
+        applied[account.split(':')[2]!] = take.toString();
+        left -= take;
+      }
+    }
+    if (left > 0n) lines.push({ account: acct.surplus(row.reference), side: 'credit', amount: kobo(left) });
+    const { entryId } = await postEntryInTx(tx, {
+      idempotencyKey: `asset_sale:${asset.id}`,
+      source: 'admin',
+      actorId: deciderId,
+      occurredAt: this.clock(),
+      description: `Resale of the asset recovered from ${row.reference}`,
+      lines,
+    });
+    const shortfall = owed.reduce((sum, [, b]) => sum + (b > 0n ? b : 0n), 0n) - (price - left);
+    const details = { priceKobo: price.toString(), buyerName: payload['buyerName'], buyerPhone: payload['buyerPhone'], entryId, applied, surplusKobo: left.toString(), shortfallKobo: shortfall.toString() };
+    await moveAccountAssetTx(tx, row.id, { from: ['for_sale'], to: 'sold', event: 'sold', actorId: deciderId, at: this.clock(), location: 'Sold', details });
+    await recordAudit(tx, { actorId: deciderId, actorKind: 'person', action: 'asset.sold', subjectType: 'finance_account', subjectId: row.reference, details });
+    return { status: 'sold', entryId, surplusKobo: left.toString(), shortfallKobo: shortfall.toString() };
   }
 
   async pendingApprovals() {

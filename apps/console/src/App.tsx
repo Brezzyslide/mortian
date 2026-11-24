@@ -14,6 +14,7 @@ import { Password } from './pages/Password';
 import { Setup } from './pages/Setup';
 import { Staff } from './pages/Staff';
 import { Products } from './pages/Products';
+import { AssetDetail, Assets } from './pages/Assets';
 import { Templates } from './pages/Templates';
 import { Tiers } from './pages/Tiers';
 
@@ -31,6 +32,7 @@ export const NAV: NavItem[] = [
   { to: '/approvals', label: 'Approvals', roles: ['manager'], element: <Approvals /> },
   { to: '/arrears', label: 'Arrears', roles: ['collections', 'manager'], element: <Arrears /> },
   { to: '/exceptions', label: 'Payment exceptions', roles: ['finance'], element: <Exceptions /> },
+  { to: '/assets', label: 'Assets', roles: ['dispatch_ops', 'underwriter', 'collections', 'finance', 'manager'], element: <Assets /> },
   { to: '/tiers', label: 'Tiers', roles: ['underwriter', 'manager'], element: <Tiers /> },
   { to: '/templates', label: 'Contract templates', roles: ['underwriter', 'manager'], element: <Templates /> },
   { to: '/products', label: 'Products', roles: ['manager'], element: <Products /> },
@@ -87,8 +89,10 @@ function Shell() {
             <Route key={n.to} path={n.to} element={n.element} />
           ))}
           {can('underwriter', 'collections', 'finance', 'manager') && <Route path="/accounts/:reference" element={<Account />} />}
+          {can('dispatch_ops', 'underwriter', 'collections', 'finance', 'manager') && <Route path="/assets/:id" element={<AssetDetail />} />}
           <Route path="/password" element={<Password />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
+          {/* Unknown paths go to the first screen this person may see (not every role has Overview). */}
+          <Route path="*" element={<Navigate to={items[0]?.to ?? '/password'} replace />} />
         </Routes>
       </main>
     </div>

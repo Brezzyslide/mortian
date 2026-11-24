@@ -137,9 +137,20 @@ describe('contract signing over HTTP, application to handover', () => {
     await http.get(`/v1/admin/contracts/${contractId}/archive/pdf`).expect(401);
   });
 
-  it('a used link is gone, and handover now succeeds', async () => {
+  it('a used link is gone, and handover succeeds once a registered bike is assigned', async () => {
     await http.post('/v1/sign/view').send({ token: linkFor('+2348091112222') }).expect(410);
+    const noBike = await http.post(`/v1/admin/lending/accounts/${ref}/activate`).set(as('mgr')).send({}).expect(409);
+    expect(noBike.body.error).toBe('no_asset');
+    const bike = await http
+      .post('/v1/admin/assets')
+      .set(as('mgr'))
+      .send({ kind: 'motorcycle', make: 'Bajaj', model: 'Boxer', idKind: 'chassis', identifier: 'MD2A12BZ0CONTRACT', costKobo: '120000000', location: 'Mararaba yard' })
+      .expect(201);
+    await http.post(`/v1/admin/assets/${bike.body.id}/assign`).set(as('mgr')).send({ reference: ref }).expect(204);
     const r = await http.post(`/v1/admin/lending/accounts/${ref}/activate`).set(as('mgr')).send({}).expect(200);
+    const mine = await http.get(`/v1/me/accounts/${ref}`).set(as('rider')).expect(200);
+    expect(mine.body.asset).toEqual({ kind: 'motorcycle', description: 'Bajaj Boxer', idKind: 'chassis', identifier: 'MD2A12BZ0CONTRACT', plateNumber: null });
+    expect(mine.body.asset).not.toHaveProperty('costKobo');
     expect(r.body.instalments).toBe(52);
   });
 

@@ -2,9 +2,9 @@
 
 ## Lifecycle so far
 
-`applied` → **approve on a tier** → `approved` → **contract signed by everyone** → `contracted` → deposit in credit → **activate** → `active` → … → `settled`
+`applied` → **approve on a tier** → `approved` → **contract signed by everyone** → `contracted` → asset assigned + deposit in credit → **activate** → `active` → … → `settled` → papers handed over → `title_transferred`
 
-Activation is refused until the contract is fully executed (see [contracts.md](contracts.md)).
+Activation is refused until the contract is fully executed (see [contracts.md](contracts.md)) and, for every product except school fees, until a registered asset is assigned (see [assets.md](assets.md)).
 
 Arrears, penalty, repossession and reactivation: see [arrears.md](arrears.md).
 

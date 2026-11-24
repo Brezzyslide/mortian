@@ -52,6 +52,10 @@ const schema = z
       .enum(['true', 'false'])
       .default('true')
       .transform((v) => v === 'true'),
+    REQUIRE_ASSET_AT_HANDOVER: z
+      .enum(['true', 'false'])
+      .default('true')
+      .transform((v) => v === 'true'),
   })
   .superRefine((c, ctx) => {
     const parts = c.DB_HOST && c.DB_NAME && c.DB_USER && c.DB_PASSWORD;
@@ -67,6 +71,9 @@ const schema = z
     }
     if (c.APP_ENV !== 'test' && c.APP_ENV !== 'development' && !c.REQUIRE_SIGNED_CONTRACT) {
       ctx.addIssue({ code: 'custom', path: ['REQUIRE_SIGNED_CONTRACT'], message: 'can only be false in development or test' });
+    }
+    if (c.APP_ENV !== 'test' && c.APP_ENV !== 'development' && !c.REQUIRE_ASSET_AT_HANDOVER) {
+      ctx.addIssue({ code: 'custom', path: ['REQUIRE_ASSET_AT_HANDOVER'], message: 'can only be false in development or test' });
     }
     if ((c.APP_ENV === 'production' || c.APP_ENV === 'staging') && !c.DB_SSL_CA_FILE) {
       ctx.addIssue({ code: 'custom', path: ['DB_SSL_CA_FILE'], message: 'required in staging and production (verified TLS to RDS)' });

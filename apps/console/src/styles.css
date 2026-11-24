@@ -71,3 +71,6 @@ button:disabled { opacity: 0.5; cursor: default; }
 .enrol { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .enrol code { word-break: break-all; }
 pre { white-space: pre-wrap; font-size: 12px; margin: 0; }
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; }
+.facts dt { color: var(--muted, #5d6673); }
+.facts dd { margin: 0; }

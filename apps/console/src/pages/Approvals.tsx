@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../auth';
 import { ErrorBox, Page, useAction, useLoad } from '../components/ui';
-import { dateTime } from '../format';
+import { dateTime, naira } from '../format';
 
 interface Pending {
   id: string;
@@ -21,6 +21,7 @@ const KIND: Record<string, string> = {
   repossession: 'Repossession',
   release: 'Release after repossession',
   close_recovered: 'Close as recovered',
+  asset_sale: 'Sell recovered asset',
 };
 
 export function Approvals() {
@@ -56,7 +57,14 @@ function Decision({ p, mine, onDone }: { p: Pending; mine: boolean; onDone: () =
       <p>
         <strong>Reason:</strong> {p.reason}
       </p>
-      {Object.keys(p.payload).length > 0 && <pre>{JSON.stringify(p.payload, null, 2)}</pre>}
+      {p.kind === 'asset_sale' ? (
+        <p>
+          <strong>Price:</strong> {naira(String(p.payload['priceKobo']))} · <strong>Buyer:</strong> {String(p.payload['buyerName'])}
+          {p.payload['buyerPhone'] ? ` (${String(p.payload['buyerPhone'])})` : ''}
+        </p>
+      ) : (
+        Object.keys(p.payload).length > 0 && <pre>{JSON.stringify(p.payload, null, 2)}</pre>
+      )}
       {mine ? (
         <p className="muted">You made this request, so another manager must decide it.</p>
       ) : (
