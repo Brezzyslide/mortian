@@ -355,3 +355,35 @@ describe('asset screens', () => {
     expect(screen.getByText(/Musa Ibrahim/)).toBeInTheDocument();
   });
 });
+
+describe('document review', () => {
+  it('an underwriter views an ID photo and rejects it with a reason; a reason is required', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: () => 'blob:doc', revokeObjectURL: () => undefined }));
+    setTokens(null);
+    sessionStorage.setItem('console.refresh', 'r');
+    handler = (url) => {
+      if (url === '/v1/auth/refresh') return { status: 200, body: { accessToken: jwt({ sub: 'uw', kind: 'staff', mfa: true, roles: ['underwriter'] }), refreshToken: 'r2' } };
+      if (url === '/v1/admin/lending/accounts/FA-000001')
+        return { status: 200, body: { reference: 'FA-000001', status: 'approved', productCode: 'motorcycle_ride_to_own', credit: '0', customer: { fullName: 'Bola', phone: '+234 806 *** 0001' }, outstanding: { total: '0', principal: '0', interest: '0', penalty: '0', fees: '0' }, next: null, missed: { instalments: 0, amount: '0', daysOverdue: 0 }, arrears: null, schedule: [] } };
+      if (url === '/v1/admin/lending/accounts/FA-000001/documents')
+        return { status: 200, body: { documents: [{ id: 'd1', kind: 'national_id', contentType: 'image/jpeg', sizeBytes: 300000, status: 'submitted', uploadedAt: '2026-11-24T09:00:00Z', reviewedAt: null, reviewNote: null }] } };
+      if (url === '/v1/admin/documents/d1/file') return { status: 200, body: 'jpeg-bytes' };
+      if (url.endsWith('/guarantors')) return { status: 200, body: { guarantors: [] } };
+      if (url === '/v1/admin/contracts/accounts/FA-000001') return { status: 200, body: { contracts: [] } };
+      if (url.endsWith('/asset')) return { status: 200, body: { asset: null } };
+      if (url.endsWith('/fees')) return { status: 200, body: { fees: [] } };
+      return { status: 200, body: {} };
+    };
+    window.history.pushState({}, '', '/console/accounts/FA-000001');
+    render(<App />);
+    expect(await screen.findByText('No accepted ID yet. Check one before approving.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'View' }));
+    expect(await screen.findByRole('img', { name: 'national_id document' })).toHaveAttribute('src', 'blob:doc');
+    expect(calls).toContain('GET /v1/admin/documents/d1/file');
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeDisabled();
+    await user.type(screen.getByLabelText(/Note/), 'Photo is blurred, retake in daylight');
+    await user.click(screen.getByRole('button', { name: 'Reject' }));
+    await waitFor(() => expect(bodies['POST /v1/admin/documents/d1/review']).toEqual({ decision: 'rejected', note: 'Photo is blurred, retake in daylight' }));
+  });
+});

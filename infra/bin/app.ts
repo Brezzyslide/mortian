@@ -58,6 +58,7 @@ for (const settings of stages) {
     dbName: data.dbName,
     appSecrets: data.appSecrets,
     contractsBucket: core.contractsBucket,
+    kycBucket: core.kycBucket,
     dataKey: core.dataKey,
     ...(alertEmail ? { alertEmail } : {}),
     ...(settings.stage === 'prod'

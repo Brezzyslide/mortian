@@ -10,7 +10,7 @@ import {
   type Messaging,
 } from '@project/adapters';
 import { ContractsService } from '@project/contracts';
-import { ArrearsService, AssetService, CollectionsService, LendingService } from '@project/finance';
+import { ArrearsService, AssetService, CollectionsService, CustomerDocumentService, LendingService } from '@project/finance';
 import { IdentityService, StaffAdminService } from '@project/identity';
 import { APP_CONFIG, type AppConfig } from './config.js';
 import { createPool } from './db.js';
@@ -24,9 +24,11 @@ export interface InfraOverrides {
   messaging?: Messaging;
   collections?: Collections;
   documents?: DocumentStore;
+  kycDocuments?: DocumentStore;
 }
 
 export const DOCUMENTS = Symbol('DOCUMENTS');
+export const KYC_DOCUMENTS = Symbol('KYC_DOCUMENTS');
 
 /**
  * Process-wide infrastructure: config, database pool, provider adapters, domain services.
@@ -47,6 +49,8 @@ export class InfraModule implements OnApplicationShutdown {
     });
     const documents =
       overrides.documents ?? (config.CONTRACTS_BUCKET ? new S3DocumentStore(config.CONTRACTS_BUCKET) : new MemoryDocumentStore());
+    const kycDocuments =
+      overrides.kycDocuments ?? (config.KYC_BUCKET ? new S3DocumentStore(config.KYC_BUCKET) : new MemoryDocumentStore());
     const contracts = new ContractsService(pool, messaging, documents, {
       otpPepper: config.AUTH_OTP_PEPPER,
       signingBaseUrl: config.SIGNING_BASE_URL ?? null,
@@ -71,11 +75,13 @@ export class InfraModule implements OnApplicationShutdown {
         { provide: CollectionsService, useValue: new CollectionsService(pool, collections) },
         { provide: LendingService, useValue: lending },
         { provide: DOCUMENTS, useValue: documents },
+        { provide: KYC_DOCUMENTS, useValue: kycDocuments },
+        { provide: CustomerDocumentService, useValue: new CustomerDocumentService(pool, kycDocuments) },
         { provide: ContractsService, useValue: contracts },
         { provide: ArrearsService, useValue: new ArrearsService(pool, lending, messaging) },
         { provide: AssetService, useValue: new AssetService(pool) },
       ],
-      exports: [APP_CONFIG, PG_POOL, MESSAGING, COLLECTIONS, IdentityService, StaffAdminService, CollectionsService, LendingService, ArrearsService, AssetService, ContractsService, DOCUMENTS],
+      exports: [APP_CONFIG, PG_POOL, MESSAGING, COLLECTIONS, IdentityService, StaffAdminService, CollectionsService, LendingService, ArrearsService, AssetService, ContractsService, CustomerDocumentService, DOCUMENTS, KYC_DOCUMENTS],
     };
   }
 

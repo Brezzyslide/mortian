@@ -2,7 +2,7 @@
 
 Integrated asset finance, dispatch and in-app contract execution platform. Launch zone: Mararaba (Nasarawa) with FCT service zones.
 
-`PROJECT_NAME` is a placeholder. Brand name, colours, domains and copy live in `packages/domain/src/brand.ts` and must never be hard-coded elsewhere.
+`PROJECT_NAME` is a placeholder. Brand name, the registered company name used in agreements (`legalName`), colours, domains and copy live in `packages/domain/src/brand.ts` and must never be hard-coded elsewhere.
 
 ## Layout
 

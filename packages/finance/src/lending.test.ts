@@ -277,3 +277,28 @@ describe('two-person approval requests', () => {
     expect((await lending().statement(fa.id, '2026-12-08')).schedule[0]!.state).toBe('paid');
   });
 });
+
+describe('terms and deposit before handover', () => {
+  it('shows the agreed amounts once approved, and how much deposit is left to pay', async () => {
+    const fa = await application();
+    expect((await lending().statement(fa.id)).terms).toBeNull();
+    await lending().approve({ financeAccountId: fa.id, tier: 'B', assetPriceKobo: '150000000', underwriterId: underwriter });
+
+    const s1 = await lending().statement(fa.id);
+    expect(s1.terms).toMatchObject({ assetPrice: 150_000_000n, deposit: 30_000_000n, financed: 120_000_000n, instalments: 52, frequency: 'weekly' });
+    expect(s1.terms!.totalCost).toBe(s1.terms!.instalmentsTotal + 30_000_000n);
+    expect(s1.deposit).toEqual({ required: 30_000_000n, paid: 0n, remaining: 30_000_000n });
+
+    await pay(fa.accountNumber, 10_000_000n);
+    expect((await lending().statement(fa.id)).deposit).toEqual({ required: 30_000_000n, paid: 10_000_000n, remaining: 20_000_000n });
+    await pay(fa.accountNumber, 25_000_000n); // more than the deposit: paid is capped, nothing negative
+    expect((await lending().statement(fa.id)).deposit).toEqual({ required: 30_000_000n, paid: 30_000_000n, remaining: 0n });
+
+    await lending().activate(fa.id, manager, '2026-12-01');
+    const s2 = await lending().statement(fa.id, '2026-12-01');
+    expect(s2.deposit).toBeNull();
+    // the summary matches the schedule actually generated at handover
+    expect(s2.terms!.instalmentsTotal).toBe(s2.schedule.reduce((a, i) => a + i.principal + i.interest, 0n));
+    expect(s2.terms!.firstInstalment).toBe(s2.schedule[0]!.principal + s2.schedule[0]!.interest);
+  });
+});

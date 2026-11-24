@@ -20,6 +20,7 @@ describe('loadConfig', () => {
       DB_PASSWORD: 'p',
       DB_SSL_CA_FILE: '/etc/rds/global-bundle.pem',
       CONTRACTS_BUCKET: 'contracts-archive',
+      KYC_BUCKET: 'customer-documents',
     });
     expect(c.DB_PORT).toBe(5432);
     expect(c.REQUIRE_SIGNED_CONTRACT).toBe(true);
@@ -49,9 +50,11 @@ describe('loadConfig', () => {
     ).toThrow(/sandbox/);
   });
 
-  it('staging needs a contracts archive and cannot skip signed contracts', () => {
+  it('staging needs both buckets and cannot skip signed contracts or assets at handover', () => {
     const staging = { ...keys, APP_ENV: 'staging', DATABASE_URL: 'postgres://x', DB_SSL_CA_FILE: '/ca.pem' };
     expect(() => loadConfig(staging)).toThrow(/CONTRACTS_BUCKET/);
     expect(() => loadConfig({ ...staging, CONTRACTS_BUCKET: 'b', REQUIRE_SIGNED_CONTRACT: 'false' })).toThrow(/REQUIRE_SIGNED_CONTRACT/);
+    expect(() => loadConfig(staging)).toThrow(/KYC_BUCKET/);
+    expect(() => loadConfig({ ...staging, CONTRACTS_BUCKET: 'b', KYC_BUCKET: 'k', REQUIRE_ASSET_AT_HANDOVER: 'false' })).toThrow(/REQUIRE_ASSET_AT_HANDOVER/);
   });
 });

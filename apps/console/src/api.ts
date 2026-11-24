@@ -105,11 +105,17 @@ export async function signOut(): Promise<void> {
   onSignedOut();
 }
 
+/** Fetches a protected file with the current session (refreshing once on 401). */
+export async function fetchBlob(path: string, retried = false): Promise<Blob> {
+  const r = await fetch(`/v1${path}`, { headers: accessToken ? { authorization: `Bearer ${accessToken}` } : {} });
+  if (r.status === 401 && !retried && (await refresh())) return fetchBlob(path, true);
+  if (!r.ok) throw new ApiError(r.status, await r.json().catch(() => null));
+  return r.blob();
+}
+
 /** Downloads a protected file (e.g. an archived agreement) with the current session and saves it. */
 export async function download(path: string, filename: string): Promise<void> {
-  const r = await fetch(`/v1${path}`, { headers: accessToken ? { authorization: `Bearer ${accessToken}` } : {} });
-  if (!r.ok) throw new ApiError(r.status, await r.json().catch(() => null));
-  const url = URL.createObjectURL(await r.blob());
+  const url = URL.createObjectURL(await fetchBlob(path));
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
