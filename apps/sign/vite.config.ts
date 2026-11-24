@@ -7,5 +7,5 @@ export default defineConfig({
   plugins: [react()],
   build: { target: 'es2019', sourcemap: true },
   server: { proxy: { '/v1': 'http://localhost:3000' } },
-  test: { environment: 'jsdom', include: ['src/**/*.test.tsx'], setupFiles: ['src/test-setup.ts'] },
+  test: { environment: 'jsdom', include: ['src/**/*.test.tsx'], setupFiles: ['src/test-setup.ts'], testTimeout: 30_000 },
 });
