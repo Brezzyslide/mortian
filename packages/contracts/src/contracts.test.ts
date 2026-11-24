@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createHash, randomBytes } from 'node:crypto';
 import { MemoryDocumentStore, SandboxCollections, SandboxMessaging } from '@project/adapters';
 import { createTestDatabase, type TestDatabase } from '@project/db';
-import { CollectionsService, LendingService, MOTORCYCLE_PLACEHOLDER_TIERS } from '@project/finance';
+import { AssetService, CollectionsService, LendingService, MOTORCYCLE_PLACEHOLDER_TIERS } from '@project/finance';
 import { ContractError, ContractsService } from './service.js';
 import { render, unknownPlaceholders } from './template.js';
 
@@ -135,6 +135,9 @@ describe('signing in order, end to end', () => {
     const va = await new CollectionsService(db.pool, new SandboxCollections('contracts-test-secret')).provisionVirtualAccount(fa.id, 'Bola');
     const p = new SandboxCollections('contracts-test-secret').buildWebhook({ reference: `DEP-${n}`, accountNumber: va.accountNumber, amountKobo: '30000000', paidAt: now.toISOString() });
     await new CollectionsService(db.pool, new SandboxCollections('contracts-test-secret')).ingestWebhook(p.body, p.headers);
+    const assets = new AssetService(db.pool, clock);
+    const bike = await assets.register({ kind: 'motorcycle', make: 'Bajaj', model: 'Boxer', idKind: 'chassis', identifier: 'MD2A12BZ0SIGNING', costKobo: 120_000_000n, location: 'Yard' }, manager);
+    await assets.assign(bike.id, fa.id, manager);
     await expect(lending().activate(fa.id, manager, '2026-12-01')).resolves.toMatchObject({ instalments: 52 });
   });
 });

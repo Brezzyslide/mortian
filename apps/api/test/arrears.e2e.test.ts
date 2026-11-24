@@ -24,6 +24,7 @@ const config = loadConfig({
   AUTH_OTP_PEPPER: randomBytes(32).toString('base64'),
   AUTH_FIELD_KEY: randomBytes(32).toString('base64'),
   REQUIRE_SIGNED_CONTRACT: 'false', // these suites cover lending, not signing (see contracts.e2e)
+  REQUIRE_ASSET_AT_HANDOVER: 'false', // asset register covered in assets.e2e
   COLLECTIONS_WEBHOOK_SECRET: 'e2e-arrears-secret-1',
 });
 const as = (who: string) => ({ Authorization: `Bearer ${tokens[who]}` });

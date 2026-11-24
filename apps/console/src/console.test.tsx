@@ -13,6 +13,7 @@ function jwt(claims: Record<string, unknown>): string {
 type Handler = (url: string, init?: RequestInit) => { status: number; body?: unknown };
 let handler: Handler;
 const calls: string[] = [];
+const bodies: Record<string, unknown> = {};
 
 beforeEach(() => {
   calls.length = 0;
@@ -22,6 +23,7 @@ beforeEach(() => {
     'fetch',
     vi.fn(async (url: string, init?: RequestInit) => {
       calls.push(`${init?.method ?? 'GET'} ${url}`);
+      if (init?.body) bodies[`${init.method ?? 'GET'} ${url}`] = JSON.parse(String(init.body));
       const r = handler(url, init);
       return new Response(r.body === undefined ? null : JSON.stringify(r.body), { status: r.status });
     }),
@@ -101,7 +103,7 @@ describe('staff sign-in and navigation', () => {
 
     const nav = await screen.findByRole('navigation');
     const links = within(nav).getAllByRole('link').map((a) => a.textContent);
-    expect(links).toEqual(['Overview', 'Applications', 'Approvals', 'Arrears', 'Tiers', 'Contract templates', 'Products', 'Audit log']);
+    expect(links).toEqual(['Overview', 'Applications', 'Approvals', 'Arrears', 'Assets', 'Tiers', 'Contract templates', 'Products', 'Audit log']);
     expect(links).not.toContain('Payment exceptions'); // finance only
     expect(sessionStorage.getItem('console.refresh')).toBe('r');
   });
@@ -151,7 +153,7 @@ describe('staff sign-in and navigation', () => {
     render(<App />);
     expect(await screen.findByText('₦3,600,000.00', { selector: '.v' })).toBeInTheDocument();
     const links = within(screen.getByRole('navigation')).getAllByRole('link').map((a) => a.textContent);
-    expect(links).toEqual(['Overview', 'Payment exceptions']);
+    expect(links).toEqual(['Overview', 'Payment exceptions', 'Assets']);
     await waitFor(() => expect(calls.some((c) => c.includes('/admin/lending/approvals'))).toBe(false));
   });
 });
@@ -305,5 +307,51 @@ describe('contract screens', () => {
       expect(!!screen.queryByRole('button', { name: 'Approve this version' })).toBe(approvable);
       unmount();
     }
+  });
+});
+
+describe('asset screens', () => {
+  const as = (roles: string[], sub = 'u1') => {
+    setTokens(null);
+    sessionStorage.setItem('console.refresh', 'r');
+    return (url: string) =>
+      url === '/v1/auth/refresh' ? { status: 200, body: { accessToken: jwt({ sub, kind: 'staff', mfa: true, roles }), refreshToken: 'r2' } } : undefined;
+  };
+  const BIKE = {
+    id: '11111111-1111-4111-8111-111111111111', kind: 'motorcycle', make: 'Bajaj', model: 'Boxer', year: 2026, idKind: 'chassis',
+    identifier: 'MD2A12BZ7LC000111', engineNumber: null, plateNumber: 'KUJ123AB', costKobo: '120000000', status: 'in_stock',
+    location: 'Mararaba yard', reference: null, createdAt: '2026-11-24T09:00:00Z',
+  };
+
+  it('an operations user lands on Assets (not a redirect loop) and registers a bike with the cost in kobo', async () => {
+    const user = userEvent.setup();
+    const auth = as(['dispatch_ops']);
+    handler = (url, init) => auth(url) ?? (url.startsWith('/v1/admin/assets') && init?.method !== 'POST' ? { status: 200, body: { assets: [BIKE] } } : { status: 201, body: BIKE });
+    window.history.pushState({}, '', '/console/');
+    render(<App />);
+    expect(await screen.findByText('Bajaj Boxer (2026)')).toBeInTheDocument();
+    expect(within(screen.getByRole('navigation')).getAllByRole('link').map((a) => a.textContent)).toEqual(['Assets']);
+    await user.click(screen.getByRole('button', { name: 'Register an asset' }));
+    await user.type(screen.getByLabelText('Make'), 'Bajaj');
+    await user.type(screen.getByLabelText('Model'), 'Boxer');
+    await user.type(screen.getByLabelText('Chassis number'), 'MD2A12BZ7LC000222');
+    await user.type(screen.getByLabelText('Cost to us (₦)'), '1,200,000.50');
+    await user.type(screen.getByLabelText('Location'), 'Mararaba yard');
+    await user.click(screen.getByRole('button', { name: 'Register' }));
+    await waitFor(() => expect(bodies['POST /v1/admin/assets']).toMatchObject({ kind: 'motorcycle', idKind: 'chassis', costKobo: '120000050' }));
+  });
+
+  it('a manager sees the sale price and buyer on an asset-sale approval', async () => {
+    const auth = as(['manager'], 'm2');
+    handler = (url) =>
+      auth(url) ??
+      (url === '/v1/admin/lending/approvals'
+        ? { status: 200, body: { pending: [{ id: 'q1', kind: 'asset_sale', finance_account_reference: 'FA-000009', payload: { priceKobo: '80000000', buyerName: 'Musa Ibrahim', buyerPhone: null }, reason: 'best offer', requested_by: 'c1', requested_at: '2026-11-24T09:00:00Z' }] } }
+        : { status: 200, body: {} });
+    window.history.pushState({}, '', '/console/approvals');
+    render(<App />);
+    expect(await screen.findByText(/Sell recovered asset/)).toBeInTheDocument();
+    expect(screen.getByText('₦800,000.00', { exact: false })).toBeInTheDocument();
+    expect(screen.getByText(/Musa Ibrahim/)).toBeInTheDocument();
   });
 });

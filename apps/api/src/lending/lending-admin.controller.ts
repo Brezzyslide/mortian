@@ -57,7 +57,7 @@ const LiveBody = z.object({ live: z.boolean() });
 function http(err: unknown): never {
   if (err instanceof LendingError) {
     if (err.code === 'not_found' || err.code === 'tier_not_found') throw new NotFoundException(err.code);
-    if (['invalid_status', 'deposit_not_paid', 'fee_not_open'].includes(err.code)) {
+    if (['invalid_status', 'deposit_not_paid', 'fee_not_open', 'no_asset'].includes(err.code)) {
       throw new ConflictException({ error: err.code, message: err.message });
     }
     throw new BadRequestException({ error: err.code, message: err.message });

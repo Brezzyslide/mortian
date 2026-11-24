@@ -176,9 +176,16 @@ export class MeAccountsController {
       'SELECT account_number, bank_name FROM virtual_account WHERE finance_account_id = $1',
       [rows[0].id],
     );
+    // The unit they hold (or held): enough to recognise it, nothing internal like cost or location.
+    const asset = await this.pool.query<{ kind: string; make: string; model: string; year: number | null; identifier: string; id_kind: string; plate_number: string | null }>(
+      `SELECT kind, make, model, year, identifier, id_kind, plate_number FROM asset WHERE finance_account_id = $1`,
+      [rows[0].id],
+    );
+    const a = asset.rows[0];
     return {
       ...statement,
       repaymentAccount: va.rows[0] ? { accountNumber: va.rows[0].account_number, bankName: va.rows[0].bank_name } : null,
+      asset: a ? { kind: a.kind, description: [a.make, a.model, a.year].filter(Boolean).join(' '), idKind: a.id_kind, identifier: a.identifier, plateNumber: a.plate_number } : null,
     };
   }
 }

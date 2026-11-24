@@ -18,7 +18,7 @@ packages/
   db/         SQL migrations, migration runner, test database helper
   ledger/     double-entry posting rules, posting service and allocation engine
   identity/   phone OTP, staff password + TOTP, sessions, audit log
-  finance/    accounts, collections, tiers, term snapshots, schedules, waterfall, fees, approvals
+  finance/    accounts, collections, tiers, term snapshots, schedules, waterfall, fees, approvals, asset register
   adapters/   provider ports + sandbox implementations
   contracts/  contract templates, guarantors, ordered signing, agreement PDF
 infra/        AWS CDK stacks
