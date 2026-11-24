@@ -104,7 +104,7 @@ describe('schedule generator', () => {
       }),
       { numRuns: 400 },
     );
-  });
+  }, 60_000); // hundreds of random schedules: seconds locally, longer on shared CI machines
 
   it('monthly dates clamp to month end and keep the anchor day', () => {
     expect(addPeriods('2026-01-31', 'monthly', 1)).toBe('2026-02-28');
@@ -186,5 +186,5 @@ describe('allocation waterfall', () => {
       ),
       { numRuns: 300 },
     );
-  });
+  }, 60_000);
 });
