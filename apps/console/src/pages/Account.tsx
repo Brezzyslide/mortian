@@ -5,6 +5,7 @@ import { useAuth } from '../auth';
 import { ErrorBox, Notice, Page, Status, useAction, useLoad } from '../components/ui';
 import { bps, dateTime, naira, toKobo } from '../format';
 import { AssetPanel } from './Assets';
+import { DocumentsPanel } from './DocumentsPanel';
 import { NoticesPanel } from './NoticesPanel';
 import { ContractsPanel, GuarantorsPanel } from './ContractPanels';
 
@@ -100,6 +101,7 @@ export function Account() {
             </div>
           )}
 
+          {['applied', 'approved', 'contracted'].includes(st.status) && <DocumentsPanel reference={reference} />}
           {st.status === 'applied' && can('underwriter') && <ApproveForm st={st} onDone={reload} />}
           {['applied', 'approved', 'contracted'].includes(st.status) && <GuarantorsPanel reference={reference} status={st.status} />}
           {st.status !== 'applied' && <ContractsPanel reference={reference} status={st.status} onChanged={reload} />}

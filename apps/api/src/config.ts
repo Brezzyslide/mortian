@@ -47,6 +47,8 @@ const schema = z
     SIGNING_BASE_URL: z.url().optional(),
     /** S3 bucket for executed contracts (Object Lock). Without it documents are kept in memory (dev/test only). */
     CONTRACTS_BUCKET: z.string().min(3).optional(),
+    /** Customer ID documents: encrypted, no object lock (they must be deletable under data-protection law). */
+    KYC_BUCKET: z.string().min(3).optional(),
     /** Only tests may turn this off; see LendingService. */
     REQUIRE_SIGNED_CONTRACT: z
       .enum(['true', 'false'])
@@ -68,6 +70,9 @@ const schema = z
     }
     if ((c.APP_ENV === 'production' || c.APP_ENV === 'staging') && !c.CONTRACTS_BUCKET) {
       ctx.addIssue({ code: 'custom', path: ['CONTRACTS_BUCKET'], message: 'required in staging and production (signed contracts must be archived)' });
+    }
+    if ((c.APP_ENV === 'production' || c.APP_ENV === 'staging') && !c.KYC_BUCKET) {
+      ctx.addIssue({ code: 'custom', path: ['KYC_BUCKET'], message: 'required in staging and production (customer documents)' });
     }
     if (c.APP_ENV !== 'test' && c.APP_ENV !== 'development' && !c.REQUIRE_SIGNED_CONTRACT) {
       ctx.addIssue({ code: 'custom', path: ['REQUIRE_SIGNED_CONTRACT'], message: 'can only be false in development or test' });

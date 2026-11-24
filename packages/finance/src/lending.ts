@@ -75,6 +75,24 @@ export interface Statement {
     paid: Kobo;
     state: 'paid' | 'part_paid' | 'missed' | 'due' | 'upcoming';
   }[];
+  /**
+   * The agreed terms in plain amounts, once approved. `instalmentsTotal` matches "total payable"
+   * on the agreement (instalments only); `totalCost` adds the deposit.
+   */
+  readonly terms: {
+    readonly assetPrice: Kobo;
+    readonly deposit: Kobo;
+    readonly financed: Kobo;
+    readonly firstInstalment: Kobo;
+    readonly instalments: number;
+    readonly frequency: string;
+    readonly instalmentsTotal: Kobo;
+    readonly totalCost: Kobo;
+    readonly annualInterestBps: number;
+    readonly interestMethod: string;
+  } | null;
+  /** Before handover: the deposit, how much is already in credit towards it, and what is left. */
+  readonly deposit: { readonly required: Kobo; readonly paid: Kobo; readonly remaining: Kobo } | null;
   /** Present whenever anything is overdue or the account is in review, repossessed or closed. */
   readonly arrears: {
     readonly reactivationAmount: Kobo;
@@ -881,6 +899,33 @@ export class LendingService {
       )
     ).rows[0]!.p;
 
+    const termSet = fa.current_snapshot_id ? await snapshotTerms(db, fa.current_snapshot_id) : null;
+    const credit = await creditOf(db, fa.reference);
+    let terms: Statement['terms'] = null;
+    let deposit: Statement['deposit'] = null;
+    if (termSet) {
+      // Amounts do not depend on the start date; any date gives the same instalments.
+      const preview = generateSchedule(termSet, asOf);
+      const instalmentsTotal = preview.reduce((a, i) => a + i.principal + i.interest, 0n);
+      const required = depositOf(termSet);
+      terms = {
+        assetPrice: kobo(BigInt(termSet.assetPriceKobo)),
+        deposit: kobo(required),
+        financed: kobo(financedPrincipalOf(termSet)),
+        firstInstalment: kobo(preview[0]!.principal + preview[0]!.interest),
+        instalments: termSet.tenorPeriods,
+        frequency: termSet.frequency,
+        instalmentsTotal: kobo(instalmentsTotal),
+        totalCost: kobo(instalmentsTotal + required),
+        annualInterestBps: termSet.annualInterestBps,
+        interestMethod: termSet.interestMethod,
+      };
+      if (['approved', 'contracted'].includes(fa.status)) {
+        const paid = credit < required ? credit : required;
+        deposit = { required: kobo(required), paid: kobo(paid), remaining: kobo(required - paid) };
+      }
+    }
+
     const principal = await accountBalance(db, acct.principal(fa.reference));
     const interest = await accountBalance(db, acct.interest(fa.reference));
     const fees = await accountBalance(db, acct.fees(fa.reference));
@@ -899,7 +944,7 @@ export class LendingService {
         penalty: kobo(penalty),
         total: kobo(principal + interest + fees + penalty),
       },
-      credit: kobo(await creditOf(db, fa.reference)),
+      credit: kobo(credit),
       missed: {
         instalments: missed.length,
         amount: kobo(missed.reduce((a, s) => a + s.owed, 0n)),
@@ -909,6 +954,8 @@ export class LendingService {
       next: next ? { dueDate: next.dueDate, amount: kobo(next.owed) } : null,
       paidOffPercent: totalPrincipal === 0n ? 0 : Number((BigInt(principalPaid) * 10_000n) / totalPrincipal) / 100,
       schedule: schedule.map(({ owed: _owed, ...s }) => s),
+      terms,
+      deposit,
       arrears: await this.arrearsBlock(fa, asOf, missed.length),
     };
   }

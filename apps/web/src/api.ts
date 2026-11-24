@@ -78,6 +78,20 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
   return json as T;
 }
 
+/** Sends a file as the raw request body (the API reads the type from the bytes). */
+export async function uploadFile<T>(path: string, file: Blob, retried = false): Promise<T> {
+  if (!accessToken && !retried && hasStoredSession()) await refresh();
+  const r = await fetch(`/v1${path}`, {
+    method: 'POST',
+    headers: { 'content-type': file.type || 'application/octet-stream', ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}) },
+    body: file,
+  });
+  if (r.status === 401 && !retried && (await refresh())) return uploadFile<T>(path, file, true);
+  const json = await r.json().catch(() => null);
+  if (!r.ok) throw new ApiError(r.status, json);
+  return json as T;
+}
+
 export async function logout(): Promise<void> {
   const token = storedRefresh();
   setSession(null);
@@ -95,6 +109,10 @@ const MESSAGES: Record<string, string> = {
   name_locked: 'Your name is on an approved agreement. Call us to change it.',
   not_withdrawable: 'This application has already been approved. Call us to cancel it.',
   invalid_request: 'Please check what you entered.',
+  unsupported_type: 'Upload a photo (JPEG or PNG) or a PDF.',
+  too_large: 'That file is too big. The limit is 8 MB.',
+  duplicate: 'You have already uploaded this file.',
+  too_many_pending: 'Please wait for your documents to be checked before adding more.',
 };
 
 export function message(err: unknown): string {

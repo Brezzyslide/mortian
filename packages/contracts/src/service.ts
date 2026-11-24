@@ -256,7 +256,7 @@ export class ContractsService {
       }
       await tx.query(
         `INSERT INTO signing_session (contract_id, signer_order, signer_role, signer_name) VALUES ($1, $2, 'company', $3)`,
-        [contractId, order, brand.name],
+        [contractId, order, brand.legalName],
       );
       await this.ev(tx, contractId, null, 'issued', { by, documentSha256, signers: order });
       await recordAudit(tx, { actorId: by, actorKind: 'person', action: 'contract.issued', subjectType: 'finance_account', subjectId: fa.reference, details: { contractId, documentSha256, isPlaceholder: template.is_placeholder } });
@@ -706,7 +706,7 @@ function fieldValues(
   const pct = (bps: number) => `${(bps / 100).toFixed(2).replace(/\.00$/, '')}%`;
   const maxLiability = (total * BigInt(terms.guarantorMaxLiabilityBps)) / 10_000n;
   return {
-    'company.name': brand.name,
+    'company.name': brand.legalName,
     'company.supportPhone': brand.supportPhone,
     'contract.reference': fa.reference,
     'contract.issueDate': issueDate,

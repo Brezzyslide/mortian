@@ -28,6 +28,7 @@ export interface AppStackProps extends StackProps {
   readonly appSecrets: Record<'jwt' | 'otpPepper' | 'fieldKey' | 'webhook', secrets.ISecret>;
   readonly alertEmail?: string;
   readonly contractsBucket: s3.IBucket;
+  readonly kycBucket: s3.IBucket;
   readonly dataKey: kms.IKey;
   /** Public base URL (https://host). Signer links become <publicBaseUrl>/sign/#token. */
   readonly publicBaseUrl?: string;
@@ -65,6 +66,7 @@ export class AppStack extends Stack {
       MESSAGING_PROVIDER: 'sandbox',
       COLLECTIONS_PROVIDER: 'sandbox',
       CONTRACTS_BUCKET: props.contractsBucket.bucketName,
+      KYC_BUCKET: props.kycBucket.bucketName,
       ...(props.publicBaseUrl ? { SIGNING_BASE_URL: `${props.publicBaseUrl.replace(/\/$/, '')}/sign/` } : {}),
     };
     const dbSecret = props.db.secret!;
@@ -104,6 +106,13 @@ export class AppStack extends Stack {
       new iam.PolicyStatement({
         actions: ['s3:PutObject', 's3:GetObject'],
         resources: [props.contractsBucket.arnForObjects('contracts/*')],
+      }),
+    );
+    // Customer documents: write and read under kyc/ only. No delete: removal is an admin task.
+    apiTask.addToTaskRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['s3:PutObject', 's3:GetObject'],
+        resources: [props.kycBucket.arnForObjects('kyc/*')],
       }),
     );
     apiTask.addToTaskRolePolicy(

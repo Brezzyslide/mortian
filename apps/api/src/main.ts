@@ -15,6 +15,8 @@ export async function createApp(config = loadConfig(), overrides: Parameters<typ
   app.set('trust proxy', 1); // behind the AWS load balancer: req.ip is the client, not the ALB
   app.disable('x-powered-by');
   app.useBodyParser('json', { limit: '100kb' });
+  // Customer document uploads only (the type is checked again from the bytes).
+  app.useBodyParser('raw', { type: ['image/jpeg', 'image/png', 'application/pdf'], limit: '8mb' });
   return app;
 }
 

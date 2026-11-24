@@ -12,11 +12,17 @@ export class WafStack extends Stack {
   constructor(scope: Construct, id: string, props: StackProps & { authRequestsPer5Min?: number; allRequestsPer5Min?: number }) {
     super(scope, id, props);
 
-    const managed = (name: string, priority: number): wafv2.CfnWebACL.RuleProperty => ({
+    const managed = (name: string, priority: number, countOnly: string[] = []): wafv2.CfnWebACL.RuleProperty => ({
       name,
       priority,
       overrideAction: { none: {} },
-      statement: { managedRuleGroupStatement: { vendorName: 'AWS', name } },
+      statement: {
+        managedRuleGroupStatement: {
+          vendorName: 'AWS',
+          name,
+          ...(countOnly.length ? { ruleActionOverrides: countOnly.map((r) => ({ name: r, actionToUse: { count: {} } })) } : {}),
+        },
+      },
       visibilityConfig: { cloudWatchMetricsEnabled: true, metricName: name, sampledRequestsEnabled: true },
     });
 
@@ -74,7 +80,10 @@ export class WafStack extends Stack {
         },
         managed('AWSManagedRulesAmazonIpReputationList', 3),
         managed('AWSManagedRulesKnownBadInputsRuleSet', 4),
-        managed('AWSManagedRulesCommonRuleSet', 5),
+        // SizeRestrictions_BODY blocks any body over 8 KB: that would refuse every ID photo and any
+        // contract template longer than a few pages. Body size is enforced per route by the API
+        // instead (100 KB JSON, 8 MB for document uploads), so this rule only counts.
+        managed('AWSManagedRulesCommonRuleSet', 5, ['SizeRestrictions_BODY']),
       ],
     });
 

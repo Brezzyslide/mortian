@@ -41,3 +41,6 @@ td { padding: 8px 4px; border-top: 1px solid #eef0f3; }
 tr.missed td { color: #b42318; font-weight: 600; }
 tr.paid td { color: #8a929c; }
 footer { margin-top: 24px; font-size: 13px; }
+select { font: inherit; padding: 12px; border: 1px solid #c8ced6; border-radius: 8px; background: #fff; color: #16191d; }
+.doc-row { display: flex; flex-direction: column; gap: 2px; padding: 6px 0; border-top: 1px solid #eef0f3; }
+.bad-text { color: #b42318; }

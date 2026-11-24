@@ -15,6 +15,7 @@ export interface CoreStackProps extends StackProps {
 export class CoreStack extends Stack {
   readonly dataKey: kms.Key;
   readonly contractsBucket: s3.Bucket;
+  readonly kycBucket: s3.Bucket;
 
   constructor(scope: Construct, id: string, props: CoreStackProps) {
     super(scope, id, props);
@@ -43,6 +44,21 @@ export class CoreStack extends Stack {
       removalPolicy: RemovalPolicy.RETAIN,
     });
 
+    // Customer ID documents. Encrypted and versioned but deliberately NOT object-locked: data
+    // protection law can require deleting them, which a lock would prevent. Old versions expire
+    // so a deletion is not undone by versioning for long.
+    this.kycBucket = new s3.Bucket(this, 'CustomerDocuments', {
+      encryption: s3.BucketEncryption.KMS,
+      encryptionKey: this.dataKey,
+      bucketKeyEnabled: true,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      enforceSSL: true,
+      versioned: true,
+      lifecycleRules: [{ noncurrentVersionExpiration: Duration.days(30), abortIncompleteMultipartUploadAfter: Duration.days(1) }],
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
+
     new CfnOutput(this, 'ContractsBucketName', { value: this.contractsBucket.bucketName });
+    new CfnOutput(this, 'CustomerDocumentsBucketName', { value: this.kycBucket.bucketName });
   }
 }

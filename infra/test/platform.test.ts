@@ -31,6 +31,7 @@ function build(settings: StageSettings, domain?: { name: string; certificateArn:
     dbName: data.dbName,
     appSecrets: data.appSecrets,
     contractsBucket: core.contractsBucket,
+    kycBucket: core.kycBucket,
     dataKey: core.dataKey,
     publicBaseUrl: 'https://api.example.com',
   });
@@ -48,6 +49,7 @@ function build(settings: StageSettings, domain?: { name: string; certificateArn:
     ...(domain ? { domain } : {}),
   });
   return {
+    core: Template.fromStack(core),
     network: Template.fromStack(network),
     data: Template.fromStack(data),
     app: Template.fromStack(api),
@@ -237,5 +239,38 @@ describe('console SPA rewrite function', () => {
     expect(run('/console').statusCode).toBe(301);
     expect(run('/sign').statusCode).toBe(301);
     expect(run('/app').statusCode).toBe(301);
+  });
+});
+
+describe('customer documents', () => {
+  it('have their own encrypted bucket without object lock, and the API can only put and get under kyc/', () => {
+    const buckets = staging.core.findResources('AWS::S3::Bucket');
+    const docs = Object.entries(buckets).find(([id]) => id.startsWith('CustomerDocuments'))![1] as { Properties: Record<string, unknown> };
+    expect(docs.Properties['ObjectLockEnabled']).toBeUndefined();
+    expect(JSON.stringify(docs.Properties['BucketEncryption'])).toContain('aws:kms');
+    expect(docs.Properties['PublicAccessBlockConfiguration']).toMatchObject({ BlockPublicAcls: true, RestrictPublicBuckets: true });
+    const policies = JSON.stringify(staging.app.findResources('AWS::IAM::Policy'));
+    expect(policies).toContain('/kyc/*');
+    expect(policies).not.toMatch(/s3:DeleteObject/);
+    staging.app.hasResourceProperties('AWS::ECS::TaskDefinition', {
+      ContainerDefinitions: Match.arrayWith([Match.objectLike({ Environment: Match.arrayWith([Match.objectLike({ Name: 'KYC_BUCKET' })]) })]),
+    });
+  });
+
+  it('the firewall counts, rather than blocks, large bodies; the other common rules still block', () => {
+    staging.waf.hasResourceProperties('AWS::WAFv2::WebACL', {
+      Rules: Match.arrayWith([
+        Match.objectLike({
+          Name: 'AWSManagedRulesCommonRuleSet',
+          OverrideAction: { None: {} },
+          Statement: {
+            ManagedRuleGroupStatement: Match.objectLike({
+              Name: 'AWSManagedRulesCommonRuleSet',
+              RuleActionOverrides: [{ Name: 'SizeRestrictions_BODY', ActionToUse: { Count: {} } }],
+            }),
+          },
+        }),
+      ]),
+    });
   });
 });

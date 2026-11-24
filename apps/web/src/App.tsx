@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { brand, formatNaira, kobo } from '@project/domain';
-import { api, ApiError, hasStoredSession, logout, message, setSession } from './api';
+import { api, ApiError, hasStoredSession, logout, message, setSession, uploadFile } from './api';
+import { shrinkImage } from './shrink';
 
 // ---------------- types ----------------
 
@@ -43,6 +44,27 @@ interface Statement {
     steps: { code: string; text: string }[];
   } | null;
   repaymentAccount: { accountNumber: string; bankName: string } | null;
+  terms: {
+    assetPrice: string;
+    deposit: string;
+    financed: string;
+    firstInstalment: string;
+    instalments: number;
+    frequency: string;
+    instalmentsTotal: string;
+    totalCost: string;
+    annualInterestBps: number;
+    interestMethod: string;
+  } | null;
+  deposit: { required: string; paid: string; remaining: string } | null;
+  asset: { description: string; idKind: string; identifier: string; plateNumber: string | null } | null;
+}
+interface Doc {
+  id: string;
+  kind: string;
+  status: 'submitted' | 'accepted' | 'rejected';
+  uploadedAt: string;
+  reviewNote: string | null;
 }
 
 const naira = (amount: string) => formatNaira(kobo(BigInt(amount)));
@@ -278,7 +300,104 @@ function Home({ me, go }: { me: Me; go: (p: string) => void }) {
         );
       })}
       <button onClick={() => go('/app/apply')}>Apply for something new</button>
+      <Documents />
     </section>
+  );
+}
+
+const DOC_KIND: Record<string, string> = {
+  national_id: 'National ID / NIN slip',
+  drivers_licence: "Driver's licence",
+  voters_card: "Voter's card",
+  passport: 'International passport',
+  proof_of_address: 'Proof of address (utility bill)',
+  other: 'Other',
+};
+const DOC_STATUS: Record<Doc['status'], { label: string; tone: string }> = {
+  submitted: { label: 'Being checked', tone: 'neutral' },
+  accepted: { label: 'Accepted', tone: 'good' },
+  rejected: { label: 'Not accepted', tone: 'bad' },
+};
+const PER: Record<string, string> = { daily: 'day', weekly: 'week', fortnightly: 'fortnight', monthly: 'month' };
+
+/** ID and proof of address: what was sent, what was accepted, and why anything was not. */
+function Documents() {
+  const [docs, setDocs] = useState<Doc[] | null>(null);
+  const [kind, setKind] = useState('national_id');
+  const [file, setFile] = useState<File | null>(null);
+  const [sent, setSent] = useState(false);
+  const a = useAction();
+  const load = useCallback(() => {
+    api<{ documents: Doc[] }>('/me/documents').then((r) => setDocs(r.documents)).catch(() => setDocs([]));
+  }, []);
+  useEffect(load, [load]);
+
+  return (
+    <div className="panel">
+      <h2>Your documents</h2>
+      <p className="small muted">We need a photo of your ID before we can approve an application. Make sure all four corners and the text are clear.</p>
+      {docs?.map((d) => (
+        <div key={d.id} className="doc-row">
+          <div className="row">
+            <span>{DOC_KIND[d.kind] ?? d.kind}</span>
+            <span className={`badge ${DOC_STATUS[d.status].tone}`}>{DOC_STATUS[d.status].label}</span>
+          </div>
+          {d.status === 'rejected' && d.reviewNote && <div className="small bad-text">{d.reviewNote}. Please upload a new one.</div>}
+        </div>
+      ))}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!file) return;
+          void a.run(async () => {
+            await uploadFile(`/me/documents?kind=${kind}`, await shrinkImage(file));
+            setFile(null);
+            setSent(true);
+            (e.target as HTMLFormElement).reset();
+            load();
+          });
+        }}
+      >
+        <label>
+          Document
+          <select value={kind} onChange={(e) => setKind(e.target.value)}>
+            {Object.entries(DOC_KIND).map(([k, v]) => (
+              <option key={k} value={k}>
+                {v}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Photo or PDF
+          <input type="file" accept="image/jpeg,image/png,application/pdf" capture="environment" onChange={(e) => (setFile(e.target.files?.[0] ?? null), setSent(false))} />
+        </label>
+        <button disabled={a.busy || !file}>{a.busy ? 'Uploading…' : 'Upload'}</button>
+      </form>
+      {sent && <div className="ok small">Uploaded. We will check it.</div>}
+      <ErrorBox error={a.error} />
+    </div>
+  );
+}
+
+function TermsPanel({ t }: { t: NonNullable<Statement['terms']> }) {
+  const rate = `${(t.annualInterestBps / 100).toFixed(2).replace(/\.00$/, '')}% a year (${t.interestMethod === 'flat' ? 'flat' : 'reducing balance'})`;
+  return (
+    <div className="panel">
+      <h2>Your terms</h2>
+      <div className="row"><span>Price</span><strong>{naira(t.assetPrice)}</strong></div>
+      <div className="row"><span>Deposit</span><strong>{naira(t.deposit)}</strong></div>
+      <div className="row"><span>Financed</span><strong>{naira(t.financed)}</strong></div>
+      <div className="row">
+        <span>Repayments</span>
+        <strong>
+          {t.instalments} × {naira(t.firstInstalment)} a {PER[t.frequency] ?? t.frequency}
+        </strong>
+      </div>
+      <div className="row"><span>Interest</span><span>{rate}</span></div>
+      <div className="row"><span>Total you pay</span><strong>{naira(t.totalCost)}</strong></div>
+      <div className="small muted">Deposit plus all repayments. Late payments add penalty interest. Your agreement has the full terms.</div>
+    </div>
   );
 }
 
@@ -383,6 +502,33 @@ function Account({ reference, go }: { reference: string; go: (p: string) => void
       </div>
       <p>{s.explain}</p>
       {st.isPlaceholderTerms && <div className="warn">Test terms. This is not a real agreement.</div>}
+
+      {st.deposit && (
+        <div className="panel">
+          <h2>Deposit</h2>
+          <div className="row"><span>Deposit</span><strong>{naira(st.deposit.required)}</strong></div>
+          <div className="row"><span>Paid so far</span><strong>{naira(st.deposit.paid)}</strong></div>
+          <div className="row"><span>Left to pay</span><strong>{naira(st.deposit.remaining)}</strong></div>
+          <div className="small">
+            {st.status === 'approved'
+              ? 'Sign your agreement first (we will text you the link). Then pay the deposit into the account below.'
+              : BigInt(st.deposit.remaining) > 0n
+                ? `Pay ${naira(st.deposit.remaining)} into the account below. We will contact you to arrange handover once it arrives.`
+                : 'Deposit paid. We will contact you to arrange handover.'}
+          </div>
+        </div>
+      )}
+      {st.terms && <TermsPanel t={st.terms} />}
+      {st.asset && (
+        <div className="panel">
+          <h2>Your {st.asset.idKind === 'imei' ? 'phone' : 'asset'}</h2>
+          <div>{st.asset.description}</div>
+          <div className="small muted">
+            {st.asset.idKind === 'chassis' ? 'Chassis' : st.asset.idKind === 'imei' ? 'IMEI' : 'Serial'} {st.asset.identifier}
+            {st.asset.plateNumber && ` · Plate ${st.asset.plateNumber}`}
+          </div>
+        </div>
+      )}
 
       {st.arrears && (
         <div className={`panel ${st.status === 'in_arrears' ? 'warn-panel' : 'bad-panel'}`} role="alert">

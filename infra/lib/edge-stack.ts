@@ -41,7 +41,7 @@ const WEB_CSP = [
   "default-src 'self'",
   "script-src 'self'",
   "style-src 'self'",
-  "img-src 'self' data:",
+  "img-src 'self' data: blob:", // blob: lets staff view an ID photo fetched with their session
   "connect-src 'self'",
   "font-src 'self'",
   "frame-ancestors 'none'",

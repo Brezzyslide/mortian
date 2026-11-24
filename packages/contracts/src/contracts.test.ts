@@ -105,6 +105,8 @@ describe('signing in order, end to end', () => {
     const view = await contracts.view(tokenFor(fa.bPhone));
     expect(view.isPlaceholder).toBe(true);
     expect(view.documentText).toContain('₦1,500,000.00');
+    // the party is the registered company, not the product name
+    expect(view.documentText).toContain('Between PROJECT_LEGAL_NAME ("the Company")');
     expect(createHash('sha256').update(view.documentText).digest('hex')).toBe(documentSha256);
 
     expect((await signAs(fa.bPhone)).next).toBe('guarantor');
