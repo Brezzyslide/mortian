@@ -87,6 +87,45 @@ export interface Collections {
   parseWebhook(rawBody: Buffer, headers: Record<string, string | string[] | undefined>): IncomingPayment | null;
 }
 
+// ---------- Checkout (one-off payments, e.g. a delivery fare) ----------
+export interface CheckoutCharge {
+  /** Our reference for the payment; the provider echoes it back in the webhook. */
+  readonly reference: string;
+  /** Where the customer completes payment (hosted page, or bank-transfer instructions). */
+  readonly payUrl: string;
+}
+
+export interface ChargePaid {
+  readonly reference: string;
+  readonly amount: Kobo;
+  readonly paidAt: Date;
+  readonly providerEventId: string;
+}
+
+export interface Checkout {
+  readonly info: AdapterInfo;
+  createCharge(input: { reference: string; amount: Kobo; customerPhone: string; description: string }): Promise<CheckoutCharge>;
+  /** Signature checked over the raw bytes. Returns null for events that are not successful charges. */
+  parseWebhook(rawBody: Buffer, headers: Record<string, string | string[] | undefined>): ChargePaid | null;
+}
+
+// ---------- Routes (distance for pricing) ----------
+export interface Point {
+  readonly lat: number;
+  readonly lng: number;
+}
+
+export interface RouteEstimate {
+  readonly distanceMeters: number;
+  /** How the distance was worked out, recorded on every quote. */
+  readonly source: string;
+}
+
+export interface Routes {
+  readonly info: AdapterInfo;
+  estimate(from: Point, to: Point): Promise<RouteEstimate>;
+}
+
 // ---------- Messaging ----------
 export type Channel = 'sms' | 'whatsapp' | 'email' | 'push';
 

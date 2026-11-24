@@ -8,5 +8,8 @@
 - **Terms, schedules and the waterfall:** [lending.md](lending.md)
 - **Arrears, repossession and reactivation:** [arrears.md](arrears.md)
 - **Contracts and signing:** [contracts.md](contracts.md)
+- **Asset register:** [assets.md](assets.md)
+- **Customer app and ID documents:** [customer-app.md](customer-app.md)
+- **Dispatch:** [dispatch.md](dispatch.md)
 - **Staff console:** [console.md](console.md)
 - **Deployment setup:** [deploy.md](deploy.md)

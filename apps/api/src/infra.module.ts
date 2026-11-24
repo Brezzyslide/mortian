@@ -1,15 +1,21 @@
 import { Global, Inject, Module, type OnApplicationShutdown } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import pg from 'pg';
 import {
   MemoryDocumentStore,
   S3DocumentStore,
+  SandboxCheckout,
   SandboxCollections,
+  SandboxRoutes,
   SandboxMessaging,
+  type Checkout,
   type Collections,
   type DocumentStore,
   type Messaging,
+  type Routes,
 } from '@project/adapters';
 import { ContractsService } from '@project/contracts';
+import { DispatchService } from '@project/dispatch';
 import { ArrearsService, AssetService, CollectionsService, CustomerDocumentService, LendingService } from '@project/finance';
 import { IdentityService, StaffAdminService } from '@project/identity';
 import { APP_CONFIG, type AppConfig } from './config.js';
@@ -18,6 +24,7 @@ import { createPool } from './db.js';
 export const PG_POOL = Symbol('PG_POOL');
 export const MESSAGING = Symbol('MESSAGING');
 export const COLLECTIONS = Symbol('COLLECTIONS');
+export const CHECKOUT = Symbol('CHECKOUT');
 
 export interface InfraOverrides {
   pool?: pg.Pool;
@@ -25,6 +32,8 @@ export interface InfraOverrides {
   collections?: Collections;
   documents?: DocumentStore;
   kycDocuments?: DocumentStore;
+  checkout?: Checkout;
+  routes?: Routes;
 }
 
 export const DOCUMENTS = Symbol('DOCUMENTS');
@@ -43,6 +52,12 @@ export class InfraModule implements OnApplicationShutdown {
     const pool = overrides.pool ?? createPool(config);
     const messaging = overrides.messaging ?? new SandboxMessaging();
     const collections = overrides.collections ?? new SandboxCollections(config.COLLECTIONS_WEBHOOK_SECRET);
+    // Paystack signs every webhook with the one secret key, so checkout shares the collections secret.
+    const checkout = overrides.checkout ?? new SandboxCheckout(config.COLLECTIONS_WEBHOOK_SECRET);
+    const dispatch = new DispatchService(pool, overrides.routes ?? new SandboxRoutes(), checkout, messaging, {
+      // A key of its own, derived so no new secret is needed: delivery codes never reuse the OTP pepper directly.
+      codePepper: createHash('sha256').update('dispatch-codes:').update(config.AUTH_OTP_PEPPER).digest(),
+    });
     const lending = new LendingService(pool, undefined, {
       requireSignedContract: config.REQUIRE_SIGNED_CONTRACT,
       requireAsset: config.REQUIRE_ASSET_AT_HANDOVER,
@@ -62,6 +77,8 @@ export class InfraModule implements OnApplicationShutdown {
         { provide: PG_POOL, useValue: pool },
         { provide: MESSAGING, useValue: messaging },
         { provide: COLLECTIONS, useValue: collections },
+        { provide: CHECKOUT, useValue: checkout },
+        { provide: DispatchService, useValue: dispatch },
         {
           provide: IdentityService,
           useValue: new IdentityService(pool, messaging, {
@@ -81,7 +98,7 @@ export class InfraModule implements OnApplicationShutdown {
         { provide: ArrearsService, useValue: new ArrearsService(pool, lending, messaging) },
         { provide: AssetService, useValue: new AssetService(pool) },
       ],
-      exports: [APP_CONFIG, PG_POOL, MESSAGING, COLLECTIONS, IdentityService, StaffAdminService, CollectionsService, LendingService, ArrearsService, AssetService, ContractsService, CustomerDocumentService, DOCUMENTS, KYC_DOCUMENTS],
+      exports: [APP_CONFIG, PG_POOL, MESSAGING, COLLECTIONS, IdentityService, StaffAdminService, CollectionsService, LendingService, ArrearsService, AssetService, ContractsService, CustomerDocumentService, DispatchService, CHECKOUT, DOCUMENTS, KYC_DOCUMENTS],
     };
   }
 

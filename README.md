@@ -21,6 +21,7 @@ packages/
   finance/    accounts, collections, tiers, term snapshots, schedules, waterfall, fees, approvals, asset register
   adapters/   provider ports + sandbox implementations
   contracts/  contract templates, guarantors, ordered signing, agreement PDF
+  dispatch/   riders, pricing, quotes, delivery jobs, dispatch-book postings
 infra/        AWS CDK stacks
 docs/         PRD pointer, ADRs, integration matrix
 ```
