@@ -72,6 +72,13 @@ export class ArrearsAdminController {
     return this.arrears.portfolio();
   }
 
+  /** Every SMS sent about the account, to the borrower or a guarantor. */
+  @StaffRoles('underwriter', 'collections', 'finance', 'manager')
+  @Get('accounts/:reference/notices')
+  async notices(@Param('reference') reference: string) {
+    return { notices: await this.arrears.notices(await this.accountId(reference)) };
+  }
+
   @StaffRoles('collections')
   @Post('accounts/:reference/repossession-requests')
   @HttpCode(201)
