@@ -54,10 +54,10 @@ jobs:
           if [ "$TARGET" = "production" ]; then
             test -n "${{ vars.PROD_DOMAIN }}" && test -n "${{ vars.PROD_CERTIFICATE_ARN }}" \
               || { echo "PROD_DOMAIN and PROD_CERTIFICATE_ARN must be set before production can deploy"; exit 1; }
-            STACKS='project-name-prod-*'
+            STACKS='mortian-prod-*'
             EXTRA="-c prodDomain=${{ vars.PROD_DOMAIN }} -c prodCertificateArn=${{ vars.PROD_CERTIFICATE_ARN }}"
           else
-            STACKS='project-name-staging-*'
+            STACKS='mortian-staging-*'
             EXTRA=""
             if [ -n "${{ vars.STAGING_PUBLIC_BASE_URL }}" ]; then EXTRA="-c stagingPublicBaseUrl=${{ vars.STAGING_PUBLIC_BASE_URL }}"; fi
           fi

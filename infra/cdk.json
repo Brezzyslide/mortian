@@ -1,7 +1,7 @@
 {
   "app": "npx tsx bin/app.ts",
   "context": {
-    "projectSlug": "project-name",
+    "projectSlug": "mortian",
     "githubRepo": "Brezzyslide/mortian",
     "region": "af-south-1"
   }

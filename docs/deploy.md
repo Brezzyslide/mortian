@@ -35,7 +35,7 @@ Staging cost: roughly US$100–150 a month in Cape Town, mostly the NAT gateway,
    cd infra
    ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
    npx cdk bootstrap aws://$ACCOUNT/af-south-1 aws://$ACCOUNT/us-east-1
-   npx cdk deploy project-name-ci
+   npx cdk deploy mortian-ci
    ```
    us-east-1 is needed because CloudFront's WAF must live there.
 3. **GitHub → repo Settings → Environments:** create `staging`, and `production` with yourself as required reviewer.
