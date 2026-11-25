@@ -49,6 +49,8 @@ const schema = z
     CONTRACTS_BUCKET: z.string().min(3).optional(),
     /** Customer ID documents: encrypted, no object lock (they must be deletable under data-protection law). */
     KYC_BUCKET: z.string().min(3).optional(),
+    /** Development only: keep contract PDFs and uploads as files here instead of in memory. */
+    LOCAL_DOCUMENTS_DIR: z.string().min(1).optional(),
     /** Only tests may turn this off; see LendingService. */
     REQUIRE_SIGNED_CONTRACT: z
       .enum(['true', 'false'])
@@ -70,6 +72,9 @@ const schema = z
     }
     if ((c.APP_ENV === 'production' || c.APP_ENV === 'staging') && !c.CONTRACTS_BUCKET) {
       ctx.addIssue({ code: 'custom', path: ['CONTRACTS_BUCKET'], message: 'required in staging and production (signed contracts must be archived)' });
+    }
+    if (c.APP_ENV !== 'development' && c.LOCAL_DOCUMENTS_DIR) {
+      ctx.addIssue({ code: 'custom', path: ['LOCAL_DOCUMENTS_DIR'], message: 'development only' });
     }
     if ((c.APP_ENV === 'production' || c.APP_ENV === 'staging') && !c.KYC_BUCKET) {
       ctx.addIssue({ code: 'custom', path: ['KYC_BUCKET'], message: 'required in staging and production (customer documents)' });

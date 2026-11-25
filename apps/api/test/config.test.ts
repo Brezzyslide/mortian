@@ -56,5 +56,6 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ ...staging, CONTRACTS_BUCKET: 'b', REQUIRE_SIGNED_CONTRACT: 'false' })).toThrow(/REQUIRE_SIGNED_CONTRACT/);
     expect(() => loadConfig(staging)).toThrow(/KYC_BUCKET/);
     expect(() => loadConfig({ ...staging, CONTRACTS_BUCKET: 'b', KYC_BUCKET: 'k', REQUIRE_ASSET_AT_HANDOVER: 'false' })).toThrow(/REQUIRE_ASSET_AT_HANDOVER/);
+    expect(() => loadConfig({ ...staging, CONTRACTS_BUCKET: 'b', KYC_BUCKET: 'k', LOCAL_DOCUMENTS_DIR: '/tmp/docs' })).toThrow(/LOCAL_DOCUMENTS_DIR/);
   });
 });

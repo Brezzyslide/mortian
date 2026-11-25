@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname, join, resolve, sep } from 'node:path';
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import type { DocumentStore, StoredDocument } from './ports.js';
 
@@ -19,6 +21,47 @@ export class MemoryDocumentStore implements DocumentStore {
     const o = this.objects.get(key);
     if (!o) throw new Error(`Document ${key} not found`);
     return Buffer.from(o.body);
+  }
+}
+
+/**
+ * Local development only: documents kept as files in a folder, so contract PDFs and uploads
+ * survive API restarts. Write-once like the S3 store (the `wx` flag refuses an existing file).
+ * Not tamper-proof and not backed up: never use it outside APP_ENV=development.
+ */
+export class FolderDocumentStore implements DocumentStore {
+  readonly info = { port: 'DocumentStore', provider: 'folder', mode: 'sandbox' } as const;
+  private readonly root: string;
+  constructor(root: string) {
+    this.root = resolve(root);
+  }
+
+  private path(key: string): string {
+    const p = resolve(this.root, key);
+    if (!p.startsWith(this.root + sep)) throw new Error(`Document key ${key} escapes the store`);
+    return p;
+  }
+
+  async put(key: string, body: Buffer, contentType: string): Promise<StoredDocument> {
+    const p = this.path(key);
+    await mkdir(dirname(p), { recursive: true });
+    try {
+      await writeFile(p, body, { flag: 'wx' });
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'EEXIST') throw new Error(`Document ${key} already exists`);
+      throw e;
+    }
+    void contentType;
+    return { key, sha256: sha256(body) };
+  }
+
+  async get(key: string): Promise<Buffer> {
+    try {
+      return await readFile(this.path(key));
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') throw new Error(`Document ${key} not found`);
+      throw e;
+    }
   }
 }
 

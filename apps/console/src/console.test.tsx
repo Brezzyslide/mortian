@@ -103,7 +103,7 @@ describe('staff sign-in and navigation', () => {
 
     const nav = await screen.findByRole('navigation');
     const links = within(nav).getAllByRole('link').map((a) => a.textContent);
-    expect(links).toEqual(['Overview', 'Applications', 'Approvals', 'Arrears', 'Deliveries', 'Riders', 'Delivery pricing', 'Assets', 'Tiers', 'Contract templates', 'Products', 'Audit log']);
+    expect(links).toEqual(['Overview', 'Applications', 'Approvals', 'Arrears', 'Deliveries', 'Riders', 'Rider payouts', 'Delivery pricing', 'Assets', 'Tiers', 'Contract templates', 'Products', 'Audit log', 'Sandbox SMS']);
     expect(links).not.toContain('Payment exceptions'); // finance only
     expect(sessionStorage.getItem('console.refresh')).toBe('r');
   });
@@ -153,7 +153,7 @@ describe('staff sign-in and navigation', () => {
     render(<App />);
     expect(await screen.findByText('₦3,600,000.00', { selector: '.v' })).toBeInTheDocument();
     const links = within(screen.getByRole('navigation')).getAllByRole('link').map((a) => a.textContent);
-    expect(links).toEqual(['Overview', 'Payment exceptions', 'Deliveries', 'Delivery pricing', 'Assets']);
+    expect(links).toEqual(['Overview', 'Payment exceptions', 'Deliveries', 'Rider payouts', 'Delivery pricing', 'Assets']);
     await waitFor(() => expect(calls.some((c) => c.includes('/admin/lending/approvals'))).toBe(false));
   });
 });
@@ -415,5 +415,30 @@ describe('dispatch screens', () => {
     await user.type(screen.getByLabelText('Note for R-00002'), 'Licence checked');
     await user.click(ready!);
     await waitFor(() => expect(bodies['POST /v1/admin/dispatch/riders/p2/decision']).toEqual({ decision: 'active', note: 'Licence checked' }));
+  });
+});
+
+describe('payout review', () => {
+  it('finance sees the bank name next to the verified name, and must give a reason to approve', async () => {
+    const user = userEvent.setup();
+    setTokens(null);
+    sessionStorage.setItem('console.refresh', 'r');
+    handler = (url) => {
+      if (url === '/v1/auth/refresh') return { status: 200, body: { accessToken: jwt({ sub: 'fin', kind: 'staff', mfa: true, roles: ['finance'] }), refreshToken: 'r2' } };
+      if (url === '/v1/admin/payouts/bank-accounts/review')
+        return { status: 200, body: { accounts: [{ id: 'a1', riderReference: 'R-00001', verifiedName: 'Bola Rider', accountName: 'MUSA IBRAHIM', bankName: 'Sandbox Bank', accountNumberMasked: '******5555', createdAt: '2026-11-24T09:00:00Z' }] } };
+      if (url === '/v1/admin/payouts/settings') return { status: 200, body: { settings: null } };
+      if (url.startsWith('/v1/admin/payouts')) return { status: 200, body: { payouts: [] } };
+      return { status: 204 };
+    };
+    window.history.pushState({}, '', '/console/payouts');
+    render(<App />);
+    expect(await screen.findByText('MUSA IBRAHIM')).toBeInTheDocument();
+    expect(screen.getByText('Bola Rider')).toBeInTheDocument();
+    const approve = screen.getByRole('button', { name: 'Approve' });
+    expect(approve).toBeDisabled();
+    await user.type(screen.getByLabelText('Note for R-00001'), 'Business name of the rider, proof seen');
+    await user.click(approve);
+    await waitFor(() => expect(bodies['POST /v1/admin/payouts/bank-accounts/a1/review']).toEqual({ decision: 'approved', note: 'Business name of the rider, proof seen' }));
   });
 });
