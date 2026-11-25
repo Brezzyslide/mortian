@@ -110,7 +110,6 @@ async function setup() {
     await waitForDb();
   }
   say('Installing and building (a few minutes the first time)…');
-  run('corepack enable', {});
   run('pnpm install');
   run('pnpm build');
 
