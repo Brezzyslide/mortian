@@ -5,6 +5,7 @@
  *   pnpm local:setup   one-time: .env with fresh secrets, database, build, admin login, test data
  *   pnpm local         start the API and the three web apps
  *   pnpm local:daily   run the nightly job now (arrears, notices, weekly payouts)
+ *   pnpm local:test    run every check CI runs (build, typecheck, tests, synth) in a separate test database
  *   pnpm local:reset   delete the local database and start again (asks first)
  * Uses Docker for Postgres unless DATABASE_URL in .env points somewhere else.
  */
@@ -181,6 +182,29 @@ function start() {
   );
 }
 
+/** The same checks as CI, against project_test so your local data is never touched. */
+async function test() {
+  const env = readEnv();
+  const base = env.DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/project_dev';
+  if (!/\/project_dev(\?|$)/.test(base)) fail('local:test expects DATABASE_URL to end in /project_dev.');
+  const testUrl = base.replace(/\/project_dev(\?|$)/, '/project_test$1');
+  if (usesDocker(env) || !existsSync(envFile)) {
+    if (!has('docker info')) fail('Docker is not running. Start Docker Desktop and run this again.');
+    run('docker compose up -d db');
+    await waitForDb();
+    if (!has(`docker compose exec -T db psql -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname='project_test'" | grep -q 1`)) {
+      run(`docker compose exec -T db psql -U postgres -c "CREATE DATABASE project_test"`);
+    }
+  }
+  // Only the test database URL: the tests bring their own keys and must not see .env secrets.
+  const testEnv = { DATABASE_URL: testUrl };
+  for (const step of ['build', 'typecheck', 'test', 'synth']) {
+    say(`pnpm ${step}…`);
+    run(`pnpm ${step}`, testEnv);
+  }
+  say('All checks passed.');
+}
+
 async function reset() {
   const [a] = await ask(['Delete ALL local data (accounts, loans, deliveries) and start again? Type "reset": ']);
   if (a !== 'reset') fail('Not reset.');
@@ -192,5 +216,6 @@ async function reset() {
 if (cmd === 'setup') await setup();
 else if (cmd === 'start') start();
 else if (cmd === 'daily') run('node apps/api/dist/cli/daily-job.js', readEnv());
+else if (cmd === 'test') await test();
 else if (cmd === 'reset') await reset();
-else fail(`Unknown command "${cmd}". Use setup, start, daily or reset.`);
+else fail(`Unknown command "${cmd}". Use setup, start, daily, test or reset.`);

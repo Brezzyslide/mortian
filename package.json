@@ -14,7 +14,8 @@
     "local:setup": "node scripts/local.mjs setup",
     "local": "node scripts/local.mjs start",
     "local:daily": "node scripts/local.mjs daily",
-    "local:reset": "node scripts/local.mjs reset"
+    "local:reset": "node scripts/local.mjs reset",
+    "local:test": "node scripts/local.mjs test"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

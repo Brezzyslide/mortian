@@ -50,6 +50,7 @@ pnpm local
 | Command | What it does |
 | --- | --- |
 | `pnpm local:daily` | Runs the nightly job now: arrears, notices and weekly payouts. Locally nothing runs it on a schedule. |
+| `pnpm local:test` | Runs every check GitHub runs (build, typecheck, all tests, `pnpm synth`) against a separate `project_test` database, so your local data is never touched. Run it before merging. |
 | `pnpm local:reset` | Deletes all local data (asks first). Run `pnpm local:setup` afterwards. |
 | `LOCAL_NETWORK=1 pnpm local` | Lets phones on the same Wi-Fi open the apps at `http://<your-Mac's-IP>:5173/app/`. Find the IP in System Settings → Wi-Fi → Details. Only do this on a network you trust. |
 
