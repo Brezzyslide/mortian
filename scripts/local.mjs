@@ -32,19 +32,25 @@ const run = (c, env = {}) => {
     fail(`This step failed: ${c}\n  The error is printed just above. Paste it if you are stuck.`);
   }
 };
-/** Prompts that work typed or piped: readline buffers piped lines before questions are asked. */
+/** Prompts that work typed or piped. One reader for the whole run: readline buffers piped lines. */
+let lineReader;
 async function ask(questions) {
-  const rl = createInterface({ input: process.stdin, terminal: process.stdin.isTTY });
-  const lines = rl[Symbol.asyncIterator]();
+  if (!lineReader) {
+    const rl = createInterface({ input: process.stdin, terminal: process.stdin.isTTY });
+    lineReader = { rl, lines: rl[Symbol.asyncIterator]() };
+  }
   const answers = [];
   for (const q of questions) {
     process.stdout.write(q);
-    const { value, done } = await lines.next();
+    const { value, done } = await lineReader.lines.next();
     if (done) fail('No answer given.');
     answers.push(value.trim());
   }
-  rl.close();
   return answers;
+}
+function closePrompts() {
+  lineReader?.rl.close();
+  lineReader = undefined;
 }
 const has = (c) => {
   try {
@@ -118,6 +124,27 @@ async function waitForDb() {
   fail('The database did not start. Is Docker Desktop running?');
 }
 
+/** Asks until the answers pass the same basic rules the API applies, so setup does not die on a typo. */
+async function askAdmin() {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const [email, name, password] = await ask([
+      '  Email: ',
+      '  Full name: ',
+      '  Password (at least 12 characters, not a common password): ',
+    ]);
+    const problems = [];
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) problems.push('the email needs to look like name@example.com');
+    if (!name) problems.push('the name is empty');
+    if (password.length < 12) problems.push(`the password is ${password.length} characters; it needs at least 12`);
+    if (!problems.length) {
+      closePrompts();
+      return [email, name, password];
+    }
+    console.log(`  Try again: ${problems.join('; ')}.`);
+  }
+  fail('Admin login not created.');
+}
+
 async function setup() {
   const major = Number(process.versions.node.split('.')[0]);
   if (major < 22) fail(`Node 22 or newer is needed (this is ${process.versions.node}). Install it from nodejs.org.`);
@@ -147,7 +174,7 @@ async function setup() {
     const [email, name, password] =
       process.env.ADMIN_EMAIL && process.env.ADMIN_NAME && process.env.ADMIN_PASSWORD
         ? [process.env.ADMIN_EMAIL, process.env.ADMIN_NAME, process.env.ADMIN_PASSWORD]
-        : await ask(['  Email: ', '  Full name: ', '  Password (12+ characters, letters and digits): ']);
+        : await askAdmin();
     run('node apps/api/dist/cli/create-admin.js', { ...env, ADMIN_EMAIL: email, ADMIN_NAME: name, ADMIN_PASSWORD: password });
   } else {
     say('An admin login already exists: skipping.');
@@ -226,6 +253,7 @@ async function test() {
 
 async function reset() {
   const [a] = await ask(['Delete ALL local data (accounts, loans, deliveries) and start again? Type "reset": ']);
+  closePrompts();
   if (a !== 'reset') fail('Not reset.');
   run(`${compose()} down -v`);
   rmSync(join(root, '.local-data'), { recursive: true, force: true });
