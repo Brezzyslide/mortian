@@ -1,3 +1,4 @@
+import { FEE_TYPES } from '@project/domain';
 import { useMemo, useState, type FormEvent } from 'react';
 import { useParams } from 'react-router-dom';
 import { api } from '../api';
@@ -482,7 +483,7 @@ function FeesPanel({ reference, fees, onDone }: { reference: string; fees: Fee[]
           <tbody>
             {fees.map((f) => (
               <tr key={f.id}>
-                <td>{f.code}</td>
+                <td>{FEE_TYPES[f.code as keyof typeof FEE_TYPES] ?? f.code}</td>
                 <td>{dateTime(f.chargedAt)}</td>
                 <td className="num">{naira(f.amount)}</td>
                 <td className="num">{naira(f.paid)}</td>
@@ -534,8 +535,15 @@ function FeesPanel({ reference, fees, onDone }: { reference: string; fees: Fee[]
           }}
         >
           <label>
-            Fee code
-            <input value={code} onChange={(e) => setCode(e.target.value.toLowerCase())} placeholder="recovery_cost" required />
+            Fee type
+            <select value={code} onChange={(e) => setCode(e.target.value)} required>
+              <option value="">Choose…</option>
+              {Object.entries(FEE_TYPES).map(([c, label]) => (
+                <option key={c} value={c}>
+                  {label}
+                </option>
+              ))}
+            </select>
           </label>
           <label>
             Amount (₦)

@@ -1,3 +1,4 @@
+import { FEE_CODES } from '@project/domain';
 import {
   BadRequestException,
   Body,
@@ -47,7 +48,7 @@ const ApproveBody = z.object({
   reason: z.string().min(5).max(500).optional(),
 });
 const ActivateBody = z.object({ startDate: z.iso.date().optional() });
-const FeeBody = z.object({ code: z.string().regex(/^[a-z][a-z0-9_]{1,40}$/), amountKobo: KoboString });
+const FeeBody = z.object({ code: z.enum(FEE_CODES, { message: 'Choose a fee type from the list' }), amountKobo: KoboString });
 const WaiverBody = z.object({ reason: z.string().min(5).max(500) });
 const DecideBody = z.object({ decision: z.enum(['approved', 'rejected']), note: z.string().min(2).max(500) });
 const TierBody = z.object({ config: z.unknown(), note: z.string().max(500).optional() });

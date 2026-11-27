@@ -135,6 +135,15 @@ describe('motorcycle ride-to-own over HTTP', () => {
   });
 
 
+  it('charges fees only from the fee-type list, with a plain error otherwise', async () => {
+    const bad = await http.post(`/v1/admin/lending/accounts/${reference}/fees`).set(bearer('fin')).send({ code: '222', amountKobo: '100000' }).expect(400);
+    expect(JSON.stringify(bad.body)).toContain('Choose a fee type from the list');
+    await http.post(`/v1/admin/lending/accounts/${reference}/fees`).set(bearer('fin')).send({ code: 'made_up_fee', amountKobo: '100000' }).expect(400);
+    await http.post(`/v1/admin/lending/accounts/${reference}/fees`).set(bearer('fin')).send({ code: 'processing_fee', amountKobo: '100000' }).expect(201);
+    const fees = await http.get(`/v1/admin/lending/accounts/${reference}/fees`).set(bearer('fin')).expect(200);
+    expect(fees.body.fees.map((f: { code: string }) => f.code)).toContain('processing_fee');
+  });
+
   it('locks the name once an application is approved', async () => {
     const r = await http.post('/v1/me/profile').set(bearer('rider')).send({ fullName: 'Somebody Else' }).expect(409);
     expect(r.body.error).toBe('name_locked');
