@@ -197,6 +197,17 @@ const TERM_LABELS: Record<string, [string, 'bps' | 'int']> = {
   guarantorMaxLiabilityBps: ['Guarantor max liability', 'bps'],
 };
 
+/** Percentage fields are typed as percent (e.g. 12.5) and sent as basis points (1250). */
+function toApiUnit(key: string, v: string): number | null {
+  if (v.trim() === '') return null;
+  const unit = TERM_LABELS[key]?.[1] ?? 'int';
+  if (unit === 'bps') {
+    if (!/^\d+(\.\d{1,2})?$/.test(v.trim())) return NaN;
+    return Math.round(Number(v) * 100);
+  }
+  return /^\d+$/.test(v.trim()) ? Number(v) : NaN;
+}
+
 function ApproveForm({ st, onDone }: { st: Statement; onDone: () => void }) {
   const tiers = useLoad(() => api<{ tiers: Tier[] }>(`/admin/lending/tiers/${st.productCode}`), [st.productCode]);
   const [tierCode, setTierCode] = useState('');
@@ -210,10 +221,11 @@ function ApproveForm({ st, onDone }: { st: Statement; onDone: () => void }) {
   const outOfBounds = useMemo(() => {
     if (!tier) return [];
     return Object.entries(adj)
-      .filter(([, v]) => v !== '')
+      .filter(([, v]) => v.trim() !== '')
       .filter(([k, v]) => {
         const b = tier.config.bounds[k]!;
-        return Number(v) < b.min || Number(v) > b.max;
+        const n = toApiUnit(k, v)!;
+        return Number.isNaN(n) || n < b.min || n > b.max;
       })
       .map(([k]) => TERM_LABELS[k]?.[0] ?? k);
   }, [adj, tier]);
@@ -223,8 +235,8 @@ function ApproveForm({ st, onDone }: { st: Statement; onDone: () => void }) {
     await action.run(async () => {
       const adjustments = Object.fromEntries(
         Object.entries(adj)
-          .filter(([, v]) => v !== '')
-          .map(([k, v]) => [k, Number(v)]),
+          .filter(([, v]) => v.trim() !== '')
+          .map(([k, v]) => [k, toApiUnit(k, v)]),
       );
       const r = await api<{ status: string; requestId?: string }>(`/admin/lending/accounts/${st.reference}/approve`, {
         body: {
@@ -294,10 +306,10 @@ function ApproveForm({ st, onDone }: { st: Statement; onDone: () => void }) {
                       <td>
                         <input
                           aria-label={label}
-                          inputMode="numeric"
                           value={adj[k] ?? ''}
-                          placeholder={unit === 'bps' ? 'basis points' : ''}
-                          onChange={(e) => setAdj({ ...adj, [k]: e.target.value.replace(/\D/g, '') })}
+                          inputMode={unit === 'bps' ? 'decimal' : 'numeric'}
+                          placeholder={unit === 'bps' ? '%' : ''}
+                          onChange={(e) => setAdj({ ...adj, [k]: e.target.value.replace(unit === 'bps' ? /[^\d.]/g : /\D/g, '') })}
                           style={{ width: 110 }}
                         />
                       </td>

@@ -392,6 +392,79 @@ describe('document review', () => {
   });
 });
 
+describe('approve on a tier', () => {
+  function setup() {
+    sessionStorage.setItem('console.refresh', 'r');
+    handler = (url) => {
+      if (url === '/v1/auth/refresh') return { status: 200, body: { accessToken: jwt({ sub: 'uw', kind: 'staff', mfa: true, roles: ['underwriter'] }), refreshToken: 'r2' } };
+      if (url === '/v1/admin/lending/accounts/FA-000001')
+        return { status: 200, body: { reference: 'FA-000001', status: 'applied', productCode: 'motorcycle_ride_to_own', credit: '0', customer: { fullName: 'Bola', phone: '+234 806 *** 0001' }, outstanding: { total: '0', principal: '0', interest: '0', penalty: '0', fees: '0' }, next: null, missed: { instalments: 0, amount: '0', daysOverdue: 0 }, arrears: null, schedule: [] } };
+      if (url === '/v1/admin/lending/tiers/motorcycle_ride_to_own')
+        return {
+          status: 200,
+          body: {
+            tiers: [
+              {
+                tier: 'A',
+                version: 1,
+                is_placeholder: true,
+                config: {
+                  frequency: 'weekly',
+                  interestMethod: 'flat',
+                  assetPriceKobo: { min: '50000000', max: '300000000' },
+                  bounds: {
+                    annualInterestBps: { default: 3000, min: 2400, max: 3600 },
+                    guarantorMaxLiabilityBps: { default: 10000, min: 5000, max: 10000 },
+                    tenorPeriods: { default: 52, min: 26, max: 78 },
+                  },
+                },
+              },
+            ],
+          },
+        };
+      if (url.endsWith('/documents')) return { status: 200, body: { documents: [] } };
+      if (url.endsWith('/guarantors')) return { status: 200, body: { guarantors: [] } };
+      if (url === '/v1/admin/contracts/accounts/FA-000001') return { status: 200, body: { contracts: [] } };
+      if (url.endsWith('/asset')) return { status: 200, body: { asset: null } };
+      if (url.endsWith('/fees')) return { status: 200, body: { fees: [] } };
+      if (url.endsWith('/approve')) return { status: 200, body: { status: 'approved' } };
+      return { status: 200, body: {} };
+    };
+    window.history.pushState({}, '', '/console/accounts/FA-000001');
+    render(<App />);
+  }
+
+  it('takes percentages as percent and sends basis points; in-range values approve directly', async () => {
+    const user = userEvent.setup();
+    setup();
+    await screen.findByRole('option', { name: /^A \(v1/ });
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Tier' }), 'A');
+    await user.type(screen.getByLabelText('Asset price (₦)'), '1,500,000');
+    await user.type(screen.getByLabelText('Guarantor max liability'), '100');
+    await user.type(screen.getByLabelText('Interest (per year)'), '32.5');
+    expect(screen.queryByText(/Outside this tier's limits/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Approve' }));
+    await waitFor(() =>
+      expect(bodies['POST /v1/admin/lending/accounts/FA-000001/approve']).toEqual({
+        tier: 'A',
+        assetPriceKobo: '150000000',
+        adjustments: { guarantorMaxLiabilityBps: 10000, annualInterestBps: 3250 },
+      }),
+    );
+  });
+
+  it('flags out-of-range and malformed values for second approval', async () => {
+    const user = userEvent.setup();
+    setup();
+    await screen.findByRole('option', { name: /^A \(v1/ });
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Tier' }), 'A');
+    await user.type(screen.getByLabelText('Guarantor max liability'), '40');
+    await user.type(screen.getByLabelText('Interest (per year)'), '30.555');
+    expect(screen.getByText(/Outside this tier's limits: Guarantor max liability, Interest \(per year\)/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Send for second approval' })).toBeInTheDocument();
+  });
+});
+
 describe('dispatch screens', () => {
   it('a rider cannot be activated until their licence is accepted, and a note is required', async () => {
     const user = userEvent.setup();
