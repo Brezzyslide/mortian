@@ -25,20 +25,32 @@ const fail = (s) => {
   console.error(`\n✖ ${s}`);
   process.exit(1);
 };
-const run = (c, env = {}) => execSync(c, { cwd: root, stdio: 'inherit', env: { ...process.env, ...env } });
-/** Prompts that work typed or piped: readline buffers piped lines before questions are asked. */
+const run = (c, env = {}) => {
+  try {
+    execSync(c, { cwd: root, stdio: 'inherit', env: { ...process.env, ...env } });
+  } catch {
+    fail(`This step failed: ${c}\n  The error is printed just above. Paste it if you are stuck.`);
+  }
+};
+/** Prompts that work typed or piped. One reader for the whole run: readline buffers piped lines. */
+let lineReader;
 async function ask(questions) {
-  const rl = createInterface({ input: process.stdin, terminal: process.stdin.isTTY });
-  const lines = rl[Symbol.asyncIterator]();
+  if (!lineReader) {
+    const rl = createInterface({ input: process.stdin, terminal: process.stdin.isTTY });
+    lineReader = { rl, lines: rl[Symbol.asyncIterator]() };
+  }
   const answers = [];
   for (const q of questions) {
     process.stdout.write(q);
-    const { value, done } = await lines.next();
+    const { value, done } = await lineReader.lines.next();
     if (done) fail('No answer given.');
     answers.push(value.trim());
   }
-  rl.close();
   return answers;
+}
+function closePrompts() {
+  lineReader?.rl.close();
+  lineReader = undefined;
 }
 const has = (c) => {
   try {
@@ -48,6 +60,20 @@ const has = (c) => {
     return false;
   }
 };
+
+let composeCmd;
+/** `docker compose` (plugin) or the older standalone `docker-compose`. */
+function compose() {
+  if (composeCmd) return composeCmd;
+  if (has('docker compose version')) composeCmd = 'docker compose';
+  else if (has('docker-compose version')) composeCmd = 'docker-compose';
+  else
+    fail(
+      'Docker Compose is missing. With Docker Desktop: quit and reopen it, or reinstall from docker.com. ' +
+        'With Homebrew: brew install docker-compose. Then check with:  docker compose version',
+    );
+  return composeCmd;
+}
 
 function readEnv() {
   if (!existsSync(envFile)) return {};
@@ -92,10 +118,31 @@ function usesDocker(env) {
 
 async function waitForDb() {
   for (let i = 0; i < 30; i++) {
-    if (has('docker compose exec -T db pg_isready -U postgres')) return;
+    if (has(`${compose()} exec -T db pg_isready -U postgres`)) return;
     await new Promise((r) => setTimeout(r, 1000));
   }
   fail('The database did not start. Is Docker Desktop running?');
+}
+
+/** Asks until the answers pass the same basic rules the API applies, so setup does not die on a typo. */
+async function askAdmin() {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const [email, name, password] = await ask([
+      '  Email: ',
+      '  Full name: ',
+      '  Password (at least 12 characters, not a common password): ',
+    ]);
+    const problems = [];
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) problems.push('the email needs to look like name@example.com');
+    if (!name) problems.push('the name is empty');
+    if (password.length < 12) problems.push(`the password is ${password.length} characters; it needs at least 12`);
+    if (!problems.length) {
+      closePrompts();
+      return [email, name, password];
+    }
+    console.log(`  Try again: ${problems.join('; ')}.`);
+  }
+  fail('Admin login not created.');
 }
 
 async function setup() {
@@ -106,11 +153,10 @@ async function setup() {
   if (usesDocker(env)) {
     if (!has('docker info')) fail('Docker is not running. Start Docker Desktop and run this again.');
     say('Starting the database (Docker)…');
-    run('docker compose up -d db');
+    run(`${compose()} up -d db`);
     await waitForDb();
   }
   say('Installing and building (a few minutes the first time)…');
-  run('corepack enable', {});
   run('pnpm install');
   run('pnpm build');
 
@@ -128,7 +174,7 @@ async function setup() {
     const [email, name, password] =
       process.env.ADMIN_EMAIL && process.env.ADMIN_NAME && process.env.ADMIN_PASSWORD
         ? [process.env.ADMIN_EMAIL, process.env.ADMIN_NAME, process.env.ADMIN_PASSWORD]
-        : await ask(['  Email: ', '  Full name: ', '  Password (12+ characters, letters and digits): ']);
+        : await askAdmin();
     run('node apps/api/dist/cli/create-admin.js', { ...env, ADMIN_EMAIL: email, ADMIN_NAME: name, ADMIN_PASSWORD: password });
   } else {
     say('An admin login already exists: skipping.');
@@ -144,7 +190,7 @@ function start() {
   if (!env.DATABASE_URL) fail('No .env yet. Run:  pnpm local:setup');
   if (usesDocker(env)) {
     if (!has('docker info')) fail('Docker is not running. Start Docker Desktop and run this again.');
-    run('docker compose up -d db');
+    run(`${compose()} up -d db`);
   }
   // Set LOCAL_NETWORK=1 to open the apps to phones on the same Wi-Fi.
   const host = process.env.LOCAL_NETWORK ? ['--host'] : [];
@@ -190,10 +236,10 @@ async function test() {
   const testUrl = base.replace(/\/project_dev(\?|$)/, '/project_test$1');
   if (usesDocker(env) || !existsSync(envFile)) {
     if (!has('docker info')) fail('Docker is not running. Start Docker Desktop and run this again.');
-    run('docker compose up -d db');
+    run(`${compose()} up -d db`);
     await waitForDb();
-    if (!has(`docker compose exec -T db psql -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname='project_test'" | grep -q 1`)) {
-      run(`docker compose exec -T db psql -U postgres -c "CREATE DATABASE project_test"`);
+    if (!has(`${compose()} exec -T db psql -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname='project_test'" | grep -q 1`)) {
+      run(`${compose()} exec -T db psql -U postgres -c "CREATE DATABASE project_test"`);
     }
   }
   // Only the test database URL: the tests bring their own keys and must not see .env secrets.
@@ -207,8 +253,9 @@ async function test() {
 
 async function reset() {
   const [a] = await ask(['Delete ALL local data (accounts, loans, deliveries) and start again? Type "reset": ']);
+  closePrompts();
   if (a !== 'reset') fail('Not reset.');
-  run('docker compose down -v');
+  run(`${compose()} down -v`);
   rmSync(join(root, '.local-data'), { recursive: true, force: true });
   say('Local database deleted. Run:  pnpm local:setup');
 }

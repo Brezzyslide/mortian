@@ -10,10 +10,19 @@ Local staging while the platform is being built and tested. Every provider is a 
 
 ## First run
 
+Install pnpm once. Node 25 and newer no longer bundle corepack, so install it with npm:
+
+```sh
+sudo npm install -g corepack
+corepack enable
+```
+
+Then:
+
 ```sh
 git clone https://github.com/Brezzyslide/mortian.git
 cd mortian
-pnpm local:setup        # if "pnpm: command not found": corepack enable, then run it again
+pnpm local:setup
 ```
 
 Setup does the following:
