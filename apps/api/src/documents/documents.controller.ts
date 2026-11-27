@@ -75,7 +75,7 @@ export class DocumentsController {
   async forAccount(@Param('reference') reference: string) {
     const { rows } = await this.pool.query<{ person_id: string }>('SELECT person_id FROM finance_account WHERE reference = $1', [reference]);
     if (!rows[0]) throw new NotFoundException();
-    return { documents: await this.docs.forPerson(rows[0].person_id) };
+    return { documents: await this.docs.forPerson(rows[0].person_id, { includeReplaced: true }) };
   }
 
   /** Streams the file. Every view is audited; nothing is cached. */

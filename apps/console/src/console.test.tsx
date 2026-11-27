@@ -103,7 +103,7 @@ describe('staff sign-in and navigation', () => {
 
     const nav = await screen.findByRole('navigation');
     const links = within(nav).getAllByRole('link').map((a) => a.textContent);
-    expect(links).toEqual(['Overview', 'Applications', 'Approvals', 'Arrears', 'Deliveries', 'Riders', 'Rider payouts', 'Delivery pricing', 'Assets', 'Tiers', 'Contract templates', 'Products', 'Audit log', 'Sandbox SMS']);
+    expect(links).toEqual(['Overview', 'Customers', 'Applications', 'Approvals', 'Arrears', 'Deliveries', 'Riders', 'Rider payouts', 'Delivery pricing', 'Assets', 'Tiers', 'Contract templates', 'Products', 'Audit log', 'Sandbox SMS']);
     expect(links).not.toContain('Payment exceptions'); // finance only
     expect(sessionStorage.getItem('console.refresh')).toBe('r');
   });
@@ -153,7 +153,7 @@ describe('staff sign-in and navigation', () => {
     render(<App />);
     expect(await screen.findByText('₦3,600,000.00', { selector: '.v' })).toBeInTheDocument();
     const links = within(screen.getByRole('navigation')).getAllByRole('link').map((a) => a.textContent);
-    expect(links).toEqual(['Overview', 'Payment exceptions', 'Deliveries', 'Rider payouts', 'Delivery pricing', 'Assets']);
+    expect(links).toEqual(['Overview', 'Customers', 'Payment exceptions', 'Deliveries', 'Rider payouts', 'Delivery pricing', 'Assets']);
     await waitFor(() => expect(calls.some((c) => c.includes('/admin/lending/approvals'))).toBe(false));
   });
 });
@@ -513,5 +513,44 @@ describe('payout review', () => {
     await user.type(screen.getByLabelText('Note for R-00001'), 'Business name of the rider, proof seen');
     await user.click(approve);
     await waitFor(() => expect(bodies['POST /v1/admin/payouts/bank-accounts/a1/review']).toEqual({ decision: 'approved', note: 'Business name of the rider, proof seen' }));
+  });
+});
+
+describe('customers', () => {
+  it('finds a customer who has not applied, and shows replaced uploads as replaced, with no review buttons', async () => {
+    const user = userEvent.setup();
+    sessionStorage.setItem('console.refresh', 'r');
+    const person = '11111111-1111-4111-8111-111111111111';
+    handler = (url) => {
+      if (url === '/v1/auth/refresh') return { status: 200, body: { accessToken: jwt({ sub: 'uw', kind: 'staff', mfa: true, roles: ['underwriter'] }), refreshToken: 'r2' } };
+      if (url.startsWith('/v1/admin/customers?q=')) return { status: 200, body: { customers: [{ id: person, fullName: 'Emily Okafor', phone: '+2348035986714', status: 'active', createdAt: '2026-11-27T00:00:00Z', accounts: 0, documentsToReview: 1 }] } };
+      if (url === '/v1/admin/customers') return { status: 200, body: { customers: [] } };
+      if (url === `/v1/admin/customers/${person}`)
+        return {
+          status: 200,
+          body: {
+            customer: { id: person, fullName: 'Emily Okafor', phone: '+2348035986714', status: 'active', createdAt: '2026-11-27T00:00:00Z', roles: ['customer'] },
+            accounts: [],
+            documents: [
+              { id: 'old', kind: 'national_id', contentType: 'image/jpeg', sizeBytes: 2048, status: 'replaced', uploadedAt: '2026-11-27T00:00:00Z', reviewedAt: null, reviewNote: null, replacedAt: '2026-11-27T00:05:00Z' },
+              { id: 'new', kind: 'national_id', contentType: 'image/jpeg', sizeBytes: 2048, status: 'submitted', uploadedAt: '2026-11-27T00:05:00Z', reviewedAt: null, reviewNote: null, replacedAt: null },
+            ],
+          },
+        };
+      return { status: 200, body: {} };
+    };
+    window.history.pushState({}, '', '/console/customers');
+    render(<App />);
+    await user.type(await screen.findByLabelText(/Phone, name or account/), '0803 598 6714');
+    await user.click(screen.getByRole('button', { name: 'Search' }));
+    expect(calls).toContain('GET /v1/admin/customers?q=0803%20598%206714');
+    expect(await screen.findByText('1 to review')).toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: 'Emily Okafor' }));
+    expect(await screen.findByText('No applications yet.')).toBeInTheDocument();
+    const rows = await screen.findAllByText('National ID / NIN slip');
+    expect(rows).toHaveLength(2);
+    expect(screen.getByText('replaced by a newer upload')).toBeInTheDocument();
+    // newest pending first, replaced last
+    expect(within(rows[0]!.closest('tr')!).getByText('to review')).toBeInTheDocument();
   });
 });

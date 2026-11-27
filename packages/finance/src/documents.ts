@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { DocumentStore } from '@project/adapters';
-import { recordAudit, type PoolLike } from '@project/identity';
+import { inTransaction, recordAudit, type PoolLike } from '@project/identity';
 
 export const DOCUMENT_KINDS = ['national_id', 'drivers_licence', 'voters_card', 'passport', 'proof_of_address', 'other'] as const;
 export type DocumentKind = (typeof DOCUMENT_KINDS)[number];
@@ -33,14 +33,15 @@ export interface CustomerDocument {
   kind: DocumentKind;
   contentType: string;
   sizeBytes: number;
-  status: 'submitted' | 'accepted' | 'rejected';
+  status: 'submitted' | 'accepted' | 'rejected' | 'replaced';
+  replacedAt: Date | null;
   uploadedAt: Date;
   reviewedAt: Date | null;
   reviewNote: string | null;
 }
 
 const COLUMNS = `id, kind, content_type AS "contentType", size_bytes AS "sizeBytes", status, uploaded_at AS "uploadedAt",
-                 reviewed_at AS "reviewedAt", review_note AS "reviewNote"`;
+                 reviewed_at AS "reviewedAt", review_note AS "reviewNote", replaced_at AS "replacedAt"`;
 
 /**
  * ID and supporting documents. Files go to a dedicated, encrypted store (not the contracts
@@ -70,14 +71,39 @@ export class CustomerDocumentService {
     const ext = contentType === 'application/pdf' ? 'pdf' : contentType === 'image/png' ? 'png' : 'jpg';
     const key = `kyc/${personId}/${randomUUID()}.${ext}`;
     await this.store.put(key, body, contentType);
+    const now = this.clock();
     try {
-      const { rows } = await this.pool.query<CustomerDocument>(
-        `INSERT INTO customer_document (person_id, kind, content_type, size_bytes, sha256, storage_key, uploaded_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING ${COLUMNS}`,
-        [personId, kind, contentType, body.length, sha256, key, this.clock()],
-      );
-      await recordAudit(this.pool, { actorId: personId, actorKind: 'person', action: 'document.uploaded', subjectType: 'customer_document', subjectId: rows[0]!.id, details: { kind, sha256 } });
-      return rows[0]!;
+      return await inTransaction(this.pool, async (tx) => {
+        // Serialise uploads per customer, so two at once cannot both stay pending.
+        await tx.query('SELECT 1 FROM person WHERE id = $1 FOR UPDATE', [personId]);
+        const id = randomUUID();
+        const replaced =
+          kind === 'other'
+            ? []
+            : (
+                await tx.query<{ id: string }>(
+                  `UPDATE customer_document SET status = 'replaced', replaced_by = $3, replaced_at = $4
+                    WHERE person_id = $1 AND kind = $2 AND status = 'submitted' RETURNING id`,
+                  [personId, kind, id, now],
+                )
+              ).rows;
+        // The old row leaves 'submitted' first (one pending per type); its pointer to the new
+        // row is checked at commit.
+        const { rows } = await tx.query<CustomerDocument>(
+          `INSERT INTO customer_document (id, person_id, kind, content_type, size_bytes, sha256, storage_key, uploaded_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING ${COLUMNS}`,
+          [id, personId, kind, contentType, body.length, sha256, key, now],
+        );
+        await recordAudit(tx, {
+          actorId: personId,
+          actorKind: 'person',
+          action: 'document.uploaded',
+          subjectType: 'customer_document',
+          subjectId: id,
+          details: { kind, sha256, ...(replaced.length ? { replaces: replaced.map((r) => r.id) } : {}) },
+        });
+        return rows[0]!;
+      });
     } catch (e) {
       // A double tap can race past the duplicate check; the unique index decides.
       if ((e as { code?: string }).code === '23505') throw new DocumentError('duplicate', 'You have already uploaded this file');
@@ -85,8 +111,12 @@ export class CustomerDocumentService {
     }
   }
 
-  async forPerson(personId: string): Promise<CustomerDocument[]> {
-    const { rows } = await this.pool.query<CustomerDocument>(`SELECT ${COLUMNS} FROM customer_document WHERE person_id = $1 ORDER BY uploaded_at DESC`, [personId]);
+  /** Customers do not see uploads they have replaced; staff do. */
+  async forPerson(personId: string, opts: { includeReplaced?: boolean } = {}): Promise<CustomerDocument[]> {
+    const { rows } = await this.pool.query<CustomerDocument>(
+      `SELECT ${COLUMNS} FROM customer_document WHERE person_id = $1 ${opts.includeReplaced ? '' : "AND status <> 'replaced'"} ORDER BY uploaded_at DESC`,
+      [personId],
+    );
     return rows;
   }
 

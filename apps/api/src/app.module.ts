@@ -11,6 +11,7 @@ import { AuthErrorFilter } from './http.js';
 import { AssetErrorFilter, AssetsController, LendingErrorFilter } from './assets/assets.controller.js';
 import { DispatchController, DispatchErrorFilter } from './dispatch/dispatch.controller.js';
 import { PayoutErrorFilter, PayoutsController } from './dispatch/payouts.controller.js';
+import { CustomersController } from './customers/customers.controller.js';
 import { DocumentErrorFilter, DocumentsController } from './documents/documents.controller.js';
 import { ContractErrorFilter, ContractsAdminController, SigningController } from './contracts/contracts.controller.js';
 import { InfraModule, type InfraOverrides } from './infra.module.js';
@@ -33,6 +34,7 @@ export class AppModule {
       controllers: [
         AssetsController,
         DocumentsController,
+        CustomersController,
         DispatchController,
         PayoutsController,
         HealthController,

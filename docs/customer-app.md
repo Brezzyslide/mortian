@@ -41,6 +41,8 @@ Customers upload a national ID/NIN slip, driver's licence, voter's card, passpor
 - The file is the raw request body, up to 8 MB. Its type is decided from its bytes (JPEG, PNG or PDF only), not from its name or the header.
 - At most 10 can wait for review per customer; the same file cannot be uploaded twice.
 - Underwriters and managers view documents on the account page (every view is in the audit log) and accept or reject them. A rejection needs a reason, which the customer sees. A decision is final: a rejected document is replaced by a new upload.
+- A new upload of the same type replaces one that is still waiting for review (not for "other"). The earlier file is kept and marked replaced, staff can still open it, and it can no longer be accepted. The database allows only one pending upload per type per customer.
+- Staff also see documents on the customer page (console → Customers), so someone who uploads but has not applied is not missed.
 - Files are served with `no-store`, `nosniff` and a sandboxing CSP, so a PDF opened directly cannot run anything.
 - Storage: a dedicated encrypted bucket (`KYC_BUCKET`), not the contracts archive. It is deliberately not object-locked, because data-protection law can require deleting ID documents. The API can only put and get under `kyc/`; it cannot delete.
 
