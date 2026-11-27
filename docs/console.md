@@ -8,6 +8,7 @@ Served at `/console/` on the same address as the API, so it calls `/v1` same-ori
 | --- | --- | --- |
 | Overview | all staff | Applications waiting (underwriters), approvals waiting (managers), portfolio by days overdue and PAR30 (finance, managers) |
 | Applications | underwriter, manager | Underwriting queue by status |
+| Customers | underwriter, collections, finance, manager | Everyone who has signed up, applied or not. Search by phone (any common format), name or `FA-…` reference. Customer page: phone, accounts, and ID documents with view, accept and reject (underwriter, manager only), including replaced uploads. |
 | Account (search `FA-…`) | underwriter, collections, finance, manager | ID documents (underwriter, manager: view, accept, reject with reason), statement, arrears and what the borrower is told, schedule, fees, guarantors, contract progress. Actions by role: approve on a tier; add/remove guarantors and issue the contract (underwriter); resend a link; countersign and revoke (manager); download the signed PDF, text and certificate; activate once signed; charge fee, request waiver, request repossession / release / closure |
 | Approvals | manager | Two-person decisions. Your own requests are shown but cannot be decided by you |
 | Arrears | collections, manager | Worklist, most overdue first, with call links |

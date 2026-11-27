@@ -335,7 +335,7 @@ function Documents() {
   return (
     <div className="panel">
       <h2>Your documents</h2>
-      <p className="small muted">We need a photo of your ID before we can approve an application. Make sure all four corners and the text are clear.</p>
+      <p className="small muted">We need a photo of your ID before we can approve an application. Make sure all four corners and the text are clear. Uploading the same type again replaces one that is still being checked.</p>
       {docs?.map((d) => (
         <div key={d.id} className="doc-row">
           <div className="row">

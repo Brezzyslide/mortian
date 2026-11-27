@@ -9,7 +9,7 @@ interface Doc {
   kind: string;
   contentType: string;
   sizeBytes: number;
-  status: 'submitted' | 'accepted' | 'rejected';
+  status: 'submitted' | 'accepted' | 'rejected' | 'replaced';
   uploadedAt: string;
   reviewedAt: string | null;
   reviewNote: string | null;
@@ -23,21 +23,33 @@ const KIND: Record<string, string> = {
   proof_of_address: 'Proof of address',
   other: 'Other',
 };
-const TONE = { submitted: 'warn', accepted: 'good', rejected: 'bad' } as const;
+const TONE = { submitted: 'warn', accepted: 'good', rejected: 'bad', replaced: 'neutral' } as const;
+const STATUS = { submitted: 'to review', accepted: 'accepted', rejected: 'rejected', replaced: 'replaced by a newer upload' } as const;
 
-/** The applicant's ID documents: view (audited), accept, or reject with a reason they will see. */
-export function DocumentsPanel({ reference }: { reference: string }) {
+/**
+ * A customer's ID documents: view (audited), accept, or reject with a reason they will see.
+ * Opened from an application (by reference) or from the customer page (by person id).
+ */
+export function DocumentsPanel(props: { reference: string } | { personId: string }) {
   const { can } = useAuth();
-  const list = useLoad(() => api<{ documents: Doc[] }>(`/admin/lending/accounts/${reference}/documents`), [reference]);
+  const key = 'reference' in props ? props.reference : props.personId;
+  const list = useLoad(
+    () =>
+      'reference' in props
+        ? api<{ documents: Doc[] }>(`/admin/lending/accounts/${props.reference}/documents`)
+        : api<{ documents: Doc[] | null }>(`/admin/customers/${props.personId}`).then((r) => ({ documents: r.documents ?? [] })),
+    [key],
+  );
   const [open, setOpen] = useState<string | null>(null);
   if (!can('underwriter', 'manager')) return null;
-  const docs = list.data?.documents ?? (list.data ? [] : null);
+  // Newest first, replaced uploads last: they are kept for the record only.
+  const docs = list.data ? [...(list.data.documents ?? [])].sort((a, b) => Number(a.status === 'replaced') - Number(b.status === 'replaced')) : null;
   const accepted = docs?.some((d) => d.status === 'accepted' && d.kind !== 'proof_of_address');
 
   return (
     <div className="panel">
       <h2 style={{ marginTop: 0 }}>Documents</h2>
-      {docs && !accepted && <p className="muted">No accepted ID yet. Check one before approving.</p>}
+      {docs && !accepted && 'reference' in props && <p className="muted">No accepted ID yet. Check one before approving.</p>}
       {docs?.length === 0 && <p className="muted">The customer has not uploaded anything. They can do it in the app.</p>}
       {docs && docs.length > 0 && (
         <table>
@@ -51,13 +63,13 @@ export function DocumentsPanel({ reference }: { reference: string }) {
           </thead>
           <tbody>
             {docs.map((d) => (
-              <tr key={d.id}>
+              <tr key={d.id} className={d.status === 'replaced' ? 'muted' : undefined}>
                 <td>
                   {KIND[d.kind] ?? d.kind} <span className="muted">({Math.ceil(d.sizeBytes / 1024)} KB)</span>
                 </td>
                 <td>{dateTime(d.uploadedAt)}</td>
                 <td>
-                  <span className={`badge ${TONE[d.status]}`}>{d.status}</span>
+                  <span className={`badge ${TONE[d.status]}`}>{STATUS[d.status]}</span>
                   {d.reviewNote && <div className="muted">{d.reviewNote}</div>}
                 </td>
                 <td>

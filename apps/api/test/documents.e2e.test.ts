@@ -130,3 +130,45 @@ describe('customer documents over HTTP', () => {
     expect(s.body.deposit).toEqual({ required: '30000000', paid: '0', remaining: '30000000' });
   });
 });
+
+describe('customer look-up', () => {
+  let riderId: string;
+
+  it('finds a customer who has not applied, by phone in any common format', async () => {
+    for (const q of ['08061234567', '+2348061234567', '0806 123 4567', '2348061234567']) {
+      const r = await http.get(`/v1/admin/customers?q=${encodeURIComponent(q)}`).set(bearer('col')).expect(200);
+      expect(r.body.customers).toHaveLength(1);
+      riderId = r.body.customers[0].id;
+    }
+    const r = await http.get('/v1/admin/customers?q=08061234567').set(bearer('uw')).expect(200);
+    expect(r.body.customers[0]).toMatchObject({ phone: '+2348061234567', accounts: expect.any(Number), documentsToReview: expect.any(Number) });
+  });
+
+  it('does not list staff, and treats LIKE wildcards literally', async () => {
+    const all = await http.get('/v1/admin/customers').set(bearer('mgr')).expect(200);
+    expect(all.body.customers.length).toBeGreaterThanOrEqual(2);
+    expect(all.body.customers.every((c: { phone: string | null }) => c.phone !== null)).toBe(true);
+    expect((await http.get('/v1/admin/customers?q=%25').set(bearer('mgr')).expect(200)).body.customers).toEqual([]);
+    expect((await http.get('/v1/admin/customers?q=__').set(bearer('mgr')).expect(200)).body.customers).toEqual([]);
+    const staffId = (await http.get('/v1/me').set(bearer('uw')).expect(200)).body.id;
+    await http.get(`/v1/admin/customers/${staffId}`).set(bearer('mgr')).expect(404);
+  });
+
+  it('shows ID documents (including replaced uploads) only to roles that review them', async () => {
+    await http.post('/v1/me/documents?kind=passport').set(bearer('rider')).set('content-type', 'image/jpeg').send(jpeg('pp1')).expect(201);
+    await http.post('/v1/me/documents?kind=passport').set(bearer('rider')).set('content-type', 'image/jpeg').send(jpeg('pp2')).expect(201);
+    const uw = await http.get(`/v1/admin/customers/${riderId}`).set(bearer('uw')).expect(200);
+    const passports = uw.body.documents.filter((d: { kind: string }) => d.kind === 'passport');
+    expect(passports.map((d: { status: string }) => d.status).sort()).toEqual(['replaced', 'submitted']);
+    const mine = await http.get('/v1/me/documents').set(bearer('rider')).expect(200);
+    expect(mine.body.documents.filter((d: { kind: string }) => d.kind === 'passport')).toHaveLength(1);
+    const fin = await http.get(`/v1/admin/customers/${riderId}`).set(bearer('fin')).expect(200);
+    expect(fin.body.documents).toBeNull();
+    expect(fin.body.customer.phone).toBe('+2348061234567');
+  });
+
+  it('is for staff only', async () => {
+    await http.get('/v1/admin/customers').set(bearer('rider')).expect(403);
+    await http.get('/v1/admin/customers/not-a-uuid').set(bearer('mgr')).expect(400);
+  });
+});

@@ -48,6 +48,55 @@ describe('customer documents', () => {
     await expect(docs.upload(customer, 'drivers_licence', same)).rejects.toMatchObject({ code: 'duplicate' });
   });
 
+  it('a new upload of the same type replaces the pending one; customers stop seeing it, staff still can', async () => {
+    const p = (await db.pool.query(`INSERT INTO person (phone) VALUES ('+2348060000011') RETURNING id`)).rows[0].id;
+    const first = await docs.upload(p, 'national_id', jpeg('first'));
+    const second = await docs.upload(p, 'national_id', jpeg('second'));
+    expect((await docs.forPerson(p)).map((d) => d.id)).toEqual([second.id]);
+    const all = await docs.forPerson(p, { includeReplaced: true });
+    expect(all.find((d) => d.id === first.id)).toMatchObject({ status: 'replaced' });
+    expect((await db.pool.query('SELECT replaced_by FROM customer_document WHERE id = $1', [first.id])).rows[0].replaced_by).toBe(second.id);
+    const audit = await db.pool.query(`SELECT details FROM audit_event WHERE action = 'document.uploaded' AND subject_id = $1`, [second.id]);
+    expect(audit.rows[0].details.replaces).toEqual([first.id]);
+    // the replaced file is kept
+    expect((await docs.file(first.id, staff)).contentType).toBe('image/jpeg');
+    // a replaced upload can no longer be reviewed
+    await expect(docs.review(first.id, staff, 'accepted', null)).rejects.toMatchObject({ code: 'already_reviewed' });
+  });
+
+  it('does not replace reviewed uploads, other types, or "other" documents', async () => {
+    const p = (await db.pool.query(`INSERT INTO person (phone) VALUES ('+2348060000012') RETURNING id`)).rows[0].id;
+    const accepted = await docs.upload(p, 'national_id', jpeg('a1'));
+    await docs.review(accepted.id, staff, 'accepted', null);
+    const licence = await docs.upload(p, 'drivers_licence', jpeg('l1'));
+    const o1 = await docs.upload(p, 'other', jpeg('o1'));
+    const o2 = await docs.upload(p, 'other', jpeg('o2'));
+    await docs.upload(p, 'national_id', jpeg('a2'));
+    const status = Object.fromEntries((await docs.forPerson(p, { includeReplaced: true })).map((d) => [d.id, d.status]));
+    expect(status[accepted.id]).toBe('accepted');
+    expect(status[licence.id]).toBe('submitted');
+    expect([status[o1.id], status[o2.id]]).toEqual(['submitted', 'submitted']);
+  });
+
+  it('two uploads of the same type at once leave exactly one pending', async () => {
+    const p = (await db.pool.query(`INSERT INTO person (phone) VALUES ('+2348060000013') RETURNING id`)).rows[0].id;
+    await Promise.allSettled([docs.upload(p, 'passport', jpeg('x1')), docs.upload(p, 'passport', jpeg('x2'))]);
+    const pending = (await docs.forPerson(p, { includeReplaced: true })).filter((d) => d.status === 'submitted');
+    expect(pending).toHaveLength(1);
+  });
+
+  it('the database refuses a second pending upload of a type, and a replaced row without a pointer', async () => {
+    const p = (await db.pool.query(`INSERT INTO person (phone) VALUES ('+2348060000014') RETURNING id`)).rows[0].id;
+    const d = await docs.upload(p, 'voters_card', jpeg('v1'));
+    const ins = (n: string) =>
+      db.pool.query(
+        `INSERT INTO customer_document (person_id, kind, content_type, size_bytes, sha256, storage_key) VALUES ($1, 'voters_card', 'image/jpeg', 10, $2, $3)`,
+        [p, n.repeat(64).slice(0, 64), `kyc/${p}/${n}.jpg`],
+      );
+    await expect(ins('a')).rejects.toThrow(/one_pending_per_kind/);
+    await expect(db.pool.query(`UPDATE customer_document SET status = 'replaced' WHERE id = $1`, [d.id])).rejects.toThrow(/replaced_check/);
+  });
+
   it('caps how many can wait for review at once', async () => {
     const p = (await db.pool.query(`INSERT INTO person (phone) VALUES ('+2348060000002') RETURNING id`)).rows[0].id;
     for (let i = 0; i < MAX_PENDING_DOCUMENTS; i++) await docs.upload(p, 'other', jpeg());

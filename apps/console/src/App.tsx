@@ -18,6 +18,7 @@ import { AssetDetail, Assets } from './pages/Assets';
 import { Deliveries, DispatchPricing, Riders } from './pages/Dispatch';
 import { Payouts } from './pages/Payouts';
 import { SandboxInbox } from './pages/SandboxInbox';
+import { Customer, Customers } from './pages/Customers';
 import { Templates } from './pages/Templates';
 import { Tiers } from './pages/Tiers';
 
@@ -31,6 +32,7 @@ interface NavItem {
 /** Each screen lists the roles that may open it; the API enforces the same rules again. */
 export const NAV: NavItem[] = [
   { to: '/', label: 'Overview', roles: ['underwriter', 'collections', 'finance', 'manager'], element: <Dashboard /> },
+  { to: '/customers', label: 'Customers', roles: ['underwriter', 'collections', 'finance', 'manager'], element: <Customers /> },
   { to: '/applications', label: 'Applications', roles: ['underwriter', 'manager'], element: <Applications /> },
   { to: '/approvals', label: 'Approvals', roles: ['manager'], element: <Approvals /> },
   { to: '/arrears', label: 'Arrears', roles: ['collections', 'manager'], element: <Arrears /> },
@@ -97,6 +99,7 @@ function Shell() {
             <Route key={n.to} path={n.to} element={n.element} />
           ))}
           {can('underwriter', 'collections', 'finance', 'manager') && <Route path="/accounts/:reference" element={<Account />} />}
+          {can('underwriter', 'collections', 'finance', 'manager') && <Route path="/customers/:id" element={<Customer />} />}
           {can('dispatch_ops', 'underwriter', 'collections', 'finance', 'manager') && <Route path="/assets/:id" element={<AssetDetail />} />}
           <Route path="/password" element={<Password />} />
           {/* Unknown paths go to the first screen this person may see (not every role has Overview). */}
